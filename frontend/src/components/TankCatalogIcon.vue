@@ -7,19 +7,12 @@ import { tankClassIcon } from '../utils/tankClassIcon.js'
 const props = withDefaults(defineProps<{
   kind: 'nation' | 'type' | 'category'
   value?: string
-  variant?: 'text' | 'filter'
-}>(), { value: '', variant: 'text' })
+}>(), { value: '' })
 const assets: Record<string, { canvas: number[]; bounds: number[]; remote?: string }> = sources.assets
 const classStems: Record<string, string> = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
 const key = computed(() => {
-  if (props.kind === 'nation') {
-    const filtered = `nation-filter-${props.value}`
-    if (props.variant === 'filter' && assets[filtered]) return filtered
-    const shared = `nation-${props.value}`
-    if (assets[shared]) return shared
-    const byVariant = `nation-${props.variant}-${props.value}`
-    return assets[byVariant] ? byVariant : filtered
-  }
+  // 国籍筛选/页签统一用 nation-filter-*（客户端 tank-tree 旗套，9 国齐全），不再按场景分流。
+  if (props.kind === 'nation') return `nation-filter-${props.value}`
   if (props.kind === 'type') return `type-${classStems[tankClassIcon(props.value)?.key || '']}`
   return `category-${props.value}`
 })

@@ -10,11 +10,6 @@
 .section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-actions { display: flex; gap: 6px; }
-.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: 24px 28px; margin-bottom: 24px; border-block-end: 2px solid var(--color-accent); }
-.hero-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.hero-link { display: inline-flex; cursor: pointer; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--theme-glass); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; text-decoration: none; }
-.hero-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.hero-left { display: flex; align-items: center; gap: 20px; }
 .profile-signed-out {
   display: grid;
   justify-items: start;
@@ -28,9 +23,6 @@
 }
 .profile-signed-out-title { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
 .profile-signed-out-hint { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--type-body); }
-.hero-avatar { width: 56px; height: 56px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 12px 26px var(--accent-shadow); }
-.hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
-.hero-subtitle { font-size: .85rem; color: var(--text-sub); margin: 0; }
 .profile-body { display: flex; gap: 24px; align-items: flex-start; }
 .profile-left { flex: 1; min-width: 0; }
 .profile-right { width: 340px; flex-shrink: 0; }
@@ -85,5 +77,4 @@
 
 @media (width < 768px) {
   .profile-right { width: 100%; }
-  .profile-hero { flex-direction: column; gap: 12px; align-items: flex-start; }
 }

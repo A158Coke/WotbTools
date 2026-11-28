@@ -141,7 +141,7 @@ describe('AdminUsersPage', () => {
       segment: 'keycloak', idpAlias: '', page: 0, size: 25
     })
 
-    await wrapper.find('.admin-pagination select').setValue('50')
+    await wrapper.get('[data-testid=admin-page-size] [data-value="50"]').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', {
       segment: 'keycloak', idpAlias: '', page: 0, size: 50

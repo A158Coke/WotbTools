@@ -13,7 +13,7 @@ import { apiErrorLabel } from '../utils/display.js'
 import AppButton from './AppButton.vue'
 import AppSwitch from './AppSwitch.vue'
 import { useReplay3DAutoStart } from '../composables/useReplay3DAutoStart.ts'
-import { sectionHeroStyle } from '../shared/sectionHeroes'
+import ShowcaseHero from './ShowcaseHero.vue'
 
 import { useProfileIdentity } from './profile/useProfileIdentity.ts'
 import { useProfileRecords } from './profile/useProfileRecords.ts'
@@ -189,19 +189,12 @@ function formatTime(value) {
     </div>
 
     <div v-else-if="profile" class="profile-main">
-      <div class="profile-card profile-hero" :style="sectionHeroStyle('profile')">
-        <div class="hero-left">
-          <div class="hero-avatar">{{ (displayName || '?')[0] }}</div>
-          <div class="hero-identity">
-            <h2 class="hero-name">{{ displayName }}</h2>
-            <p class="hero-subtitle">{{ heroSubtitle }}</p>
-          </div>
-        </div>
-        <div class="hero-links">
-          <button v-if="navigateView" type="button" class="hero-link" data-testid="profile-settings-link" @click="navigateView('more')">{{ $t('profile.settingsLink') }}</button>
-          <button v-if="navigateView" type="button" class="hero-link" data-testid="profile-submit-link" @click="navigateView('hof')">{{ $t('profile.submitLink') }}</button>
-        </div>
-      </div>
+      <ShowcaseHero section="profile" :title="displayName" :description="heroSubtitle">
+        <template v-if="navigateView" #actions>
+          <AppButton data-testid="profile-settings-link" @click="navigateView('more')">{{ $t('profile.settingsLink') }}</AppButton>
+          <AppButton data-testid="profile-submit-link" @click="navigateView('hof')">{{ $t('profile.submitLink') }}</AppButton>
+        </template>
+      </ShowcaseHero>
 
       <div class="profile-body">
         <div class="profile-left">

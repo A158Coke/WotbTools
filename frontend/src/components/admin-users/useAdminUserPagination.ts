@@ -1,38 +1,26 @@
-import { ref } from 'vue'
+import { ref, type ComputedRef } from 'vue'
 
-/** @param {{ requireOnline: () => boolean, clearSelection: () => void, loadUsers: () => Promise<void>, reloadFirstPage: () => void }} ctx */
 type PaginationContext = {
   requireOnline: () => boolean
-  clearSelection: () => void
-  loadUsers: () => Promise<void>
-  reloadFirstPage: () => void
+  page: ComputedRef<number>
+  size: ComputedRef<number>
+  totalPages: ComputedRef<number>
+  requestPage: (page: number, size: number) => void
 }
 
-export function useAdminUserPagination({ requireOnline, clearSelection, loadUsers, reloadFirstPage }: PaginationContext) {
-  const page = ref(0)
-  const size = ref(25)
-  const totalItems = ref(0)
-  const totalPages = ref(0)
+export function useAdminUserPagination({ requireOnline, page, size, totalPages, requestPage }: PaginationContext) {
   const jumpPage = ref('')
 
-  function onSizeChange(event: Event) {
-    const target = event.target instanceof HTMLSelectElement ? event.target : null
-    const next = Number(target?.value)
-    if (!requireOnline() || !Number.isFinite(next)) {
-      if (target) target.value = target.dataset.appliedValue ?? ''
-      return
-    }
-    size.value = next
-    reloadFirstPage()
+  function onSizeChange(value: string) {
+    if (!requireOnline()) return
+    requestPage(0, Number(value))
   }
 
   function goPage(nextPage: number) {
     if (!requireOnline()) return
     if (nextPage < 0 || nextPage === page.value) return
     if (totalPages.value > 0 && nextPage > totalPages.value - 1) return
-    clearSelection()
-    page.value = nextPage
-    loadUsers()
+    requestPage(nextPage, size.value)
   }
 
   function jumpTargetPage(raw: string | number, total: number) {
@@ -48,5 +36,5 @@ export function useAdminUserPagination({ requireOnline, clearSelection, loadUser
     goPage(target - 1)
   }
 
-  return { page, size, totalItems, totalPages, jumpPage, onSizeChange, goPage, jumpTargetPage, goJumpPage }
+  return { jumpPage, onSizeChange, goPage, jumpTargetPage, goJumpPage }
 }

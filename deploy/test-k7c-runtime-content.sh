@@ -36,8 +36,8 @@ replica_step="$(awk '
 [ -n "$replica_step" ] || fail "frontend replica must reconcile TX2 in a single step (lock must cover the sync)"
 printf '%s\n' "$replica_step" | grep -Fq 'exec 9>/opt/wotb-tx2/.deploy.lock' \
   || fail "the TX2 reconcile step must take the host deploy lock"
-printf '%s\n' "$replica_step" | grep -Fq 'flock -n 9' \
-  || fail "the TX2 reconcile step must acquire the host deploy lock"
+printf '%s\n' "$replica_step" | grep -Fq 'flock -w "$tx2_lock_wait" 9' \
+  || fail "the TX2 reconcile step must acquire the host deploy lock with a bounded wait"
 printf '%s\n' "$replica_step" | grep -Fq 'bash "$incoming/k7c-sync-runtime-content.sh"' \
   || fail "the TX2 reconcile step must run the runtime sync itself"
 lock_ln="$(printf '%s\n' "$replica_step" | grep -nF 'exec 9>/opt/wotb-tx2/.deploy.lock' | head -n1 | cut -d: -f1 || true)"

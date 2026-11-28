@@ -1180,30 +1180,45 @@ async function runStaggeredLoadScenario(env, scenario) {
     { timeout: 30000, label: 'staggered visual/armor load ready' })
   const state = await page.evaluate(`(() => {
     const debug = window.__DBG__
-    let armorSample = null
+    let primarySample = null
+    let spacedSample = null
     if (debug && debug.scene) {
       debug.scene.traverse(node => {
-        if (armorSample || !node.isMesh || !node.visible || node.userData.armorSection === 'deco') return
-        if (/_armor_/.test(node.name || '')) armorSample = node
+        if (!node.isMesh || !node.visible || node.userData.armorSection === 'deco') return
+        if (node.userData.armorSection === 'spaced') {
+          if (!spacedSample) spacedSample = node
+        } else if (!primarySample && /_armor_/.test(node.name || '')) {
+          primarySample = node
+        }
       })
     }
+    let moduleSample = null
     let visibleBodyMeshes = 0
     let visibleModuleMeshes = 0
     if (debug && debug.tankModel) {
       debug.tankModel.traverse(node => {
         if (!node.isMesh || !node.visible) return
         const section = node.userData.armorSection
-        if (section === 'chassis' || section === 'gunBarrel') visibleModuleMeshes++
-        else visibleBodyMeshes++
+        if (section === 'chassis' || section === 'gunBarrel') {
+          visibleModuleMeshes++
+          if (!moduleSample) moduleSample = node
+        } else visibleBodyMeshes++
       })
     }
+    const sample = node => node && node.material ? {
+      opacity: node.material.opacity,
+      depthWrite: node.material.depthWrite,
+      outlines: node.children.filter(child => child.isLineSegments).length,
+    } : null
     return {
       load: window.__LOAD__,
       collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
       tankVisible: debug && debug.tankModel ? debug.tankModel.visible : null,
       visibleBodyMeshes,
       visibleModuleMeshes,
-      armorOpacity: armorSample && armorSample.material ? armorSample.material.opacity : null,
+      primary: sample(primarySample),
+      spaced: sample(spacedSample),
+      module: sample(moduleSample),
     }
   })()`)
   check(failures, state.load === 'ok:' + FIXTURE_TANK_ID,
@@ -1214,8 +1229,65 @@ async function runStaggeredLoadScenario(env, scenario) {
     `${scenario.name}: armor 就绪后视觉车体仍可见（tankVisible=${state.tankVisible}, body=${state.visibleBodyMeshes}）`)
   check(failures, state.visibleModuleMeshes > 0,
     `${scenario.name}: 厚度视图未保留炮管/履带碰撞体（modules=${state.visibleModuleMeshes}）`)
-  check(failures, state.armorOpacity != null && state.armorOpacity >= 0.9,
-    `${scenario.name}: armor 材质未切到碰撞态（opacity=${state.armorOpacity}）`)
+  check(failures, !!state.primary && state.primary.opacity === 1
+    && state.primary.depthWrite === true && state.primary.outlines > 0,
+    `${scenario.name}: primary 厚度材质不是不透明平涂+勾线（${JSON.stringify(state.primary)}）`)
+  check(failures, !!state.spaced && state.spaced.opacity >= 0.5 && state.spaced.opacity <= 1
+    && state.spaced.depthWrite === true && state.spaced.outlines > 0,
+    `${scenario.name}: spaced 厚度材质透明度/勾线异常（${JSON.stringify(state.spaced)}）`)
+  check(failures, !!state.module && Math.abs(state.module.opacity - 0.125) < 1e-6
+    && state.module.depthWrite === false && state.module.outlines > 0,
+    `${scenario.name}: external 厚度材质不是 1/8 透明+不写深度+勾线（${JSON.stringify(state.module)}）`)
+
+  const leftTrackSpot = await page.evaluate(`(() => {
+    const H = window.__armorRicochet
+    const canvas = document.querySelector('#canvas-container canvas')
+    if (!H || !canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    for (let y = 20; y < canvas.height - 20; y += 8) {
+      for (let x = 20; x < canvas.width - 20; x += 8) {
+        const px = rect.left + x, py = rect.top + y
+        if (document.elementFromPoint(px, py) !== canvas) continue
+        const hits = H.__raytrace(px, py) || []
+        // 必须选“首个命中就是履带”的像素：履带后面的 chassis 命中不能代表可见表面，
+        // 点击链会先选到前面的车体装甲板。
+        const hit = hits[0]
+        if (hit && hit.sec === 'chassis' && /trackL|_L_/.test(hit.name || '')) return { x: px, y: py }
+      }
+    }
+    return null
+  })()`)
+  check(failures, !!leftTrackSpot, `${scenario.name}: 夹具未找到左侧履带像素`)
+  if (leftTrackSpot) {
+    // 该场景是桌面鼠标模拟（touch:false）；用 touch 事件不会产生 pointer 点击。
+    await page.tap({ x: leftTrackSpot.x, y: leftTrackSpot.y, touch: false })
+    await delay(150)
+    const group = await page.evaluate(`(() => {
+      const tank = window.__DBG__ && window.__DBG__.tankModel
+      if (!tank) return null
+      let left = 0, leftOpaque = 0, right = 0, rightOpaque = 0
+      const parts = []
+      tank.traverse(node => {
+        if (!node.isMesh || node.userData.armorSection !== 'chassis') return
+        const opacity = node.material ? node.material.opacity : null
+        const opaque = opacity === 1
+        const plate = node.userData.armorPlateId
+        parts.push({ name: node.name, plate, opacity })
+        if (plate === 'leftTrack') {
+          left++
+          if (opaque) leftOpaque++
+        } else if (plate === 'rightTrack') {
+          right++
+          if (opaque) rightOpaque++
+        }
+      })
+      const card = document.querySelector('#click-part')
+      return { left, leftOpaque, right, rightOpaque, part: card ? card.textContent : null, parts }
+    })()`)
+    console.log(`[browser-armor-mobile] ${scenario.name} left track click: spot=${JSON.stringify(leftTrackSpot)} group=${JSON.stringify(group)}`)
+    check(failures, !!group && group.left > 0 && group.leftOpaque === group.left && group.rightOpaque === 0,
+      `${scenario.name}: 点击左侧履带未整侧高亮（${JSON.stringify(group)}）`)
+  }
   check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })

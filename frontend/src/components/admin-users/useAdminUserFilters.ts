@@ -3,30 +3,31 @@ import type { ComputedRef } from 'vue'
 import type { useI18n } from 'vue-i18n'
 
 type Translate = ReturnType<typeof useI18n>['t']
+type UserFilters = { query: string; segment: 'keycloak' | 'local'; idpAlias: string }
 type FilterContext = {
   requireOnline: () => boolean
-  reloadFirstPage: () => void
+  applied: ComputedRef<UserFilters>
+  reloadFirstPage: (filters: UserFilters) => Promise<boolean>
+  removeDisabled: ComputedRef<boolean>
   adminAvailability: ComputedRef<{ available: boolean }>
   t: Translate
 }
 
-/**
- * @param {{
- *  requireOnline: () => boolean,
- *  reloadFirstPage: () => void,
- *  adminAvailability: import('vue').ComputedRef<{ available: boolean }>,
- *  t: (key: string) => string,
- * }} ctx
- */
-export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvailability, t }: FilterContext) {
-  const segment = ref<'keycloak' | 'local'>('keycloak')
+export function useAdminUserFilters({ requireOnline, applied, reloadFirstPage, removeDisabled, adminAvailability, t }: FilterContext) {
+  const segment = computed(() => applied.value.segment)
   const idpAlias = ref('')
+  const searchQuery = ref('')
 
-  function onSegmentChange(value: 'keycloak' | 'local') {
+  function draftFor(value: UserFilters['segment']): UserFilters {
+    return { query: searchQuery.value, segment: value, idpAlias: value === 'keycloak' ? idpAlias.value.trim() : '' }
+  }
+
+  function onSearch() { void reloadFirstPage(draftFor(segment.value)) }
+
+  async function onSegmentChange(value: UserFilters['segment']) {
     if (value === segment.value || !requireOnline()) return
-    segment.value = value
-    if (segment.value !== 'keycloak') idpAlias.value = ''
-    reloadFirstPage()
+    const previousAlias = idpAlias.value
+    if (await reloadFirstPage(draftFor(value)) && value === 'local' && idpAlias.value === previousAlias) idpAlias.value = ''
   }
 
   const segmentOptions = computed(() => [
@@ -34,19 +35,15 @@ export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvail
     { value: 'local', label: t('admin.segmentLocal'), testid: 'admin-segment-local', disabled: !adminAvailability.value.available },
   ])
 
-  function onIdpAliasChange() {
-    reloadFirstPage()
-  }
-
-  const filterChips = computed(() => (segment.value === 'keycloak' && idpAlias.value.trim()
-    ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${idpAlias.value.trim()}` }]
+  const filterChips = computed(() => (applied.value.idpAlias
+    ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${applied.value.idpAlias}` }]
     : []))
 
   function removeFilterChip(key: string) {
-    if (key !== 'idpAlias') return
-    idpAlias.value = ''
-    reloadFirstPage()
+    if (key !== 'idpAlias' || removeDisabled.value || !applied.value.idpAlias || !requireOnline()) return
+    if (idpAlias.value.trim() === applied.value.idpAlias) idpAlias.value = ''
+    reloadFirstPage({ ...applied.value, idpAlias: '' })
   }
 
-  return { segment, idpAlias, onSegmentChange, segmentOptions, onIdpAliasChange, filterChips, removeFilterChip }
+  return { segment, idpAlias, searchQuery, onSearch, onSegmentChange, segmentOptions, filterChips, removeFilterChip }
 }

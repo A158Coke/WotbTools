@@ -155,7 +155,7 @@ export async function runParseLifecycleScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&ws-manual-3d=1&debug`)
+  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&ws-3d-manual-start=1&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
@@ -451,7 +451,7 @@ export async function runReplayCollectionScenario(env) {
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="replay-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
     const singleHero = await page.evaluate(heroHeight)
-    check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
+    check(failures, singleHero >= 478 && singleHero <= 482, `replay compact hero must stay 480px at 1440: ${singleHero}`)
     const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
     const toolbarAtDocumentTop = await page.evaluate(`(() => {

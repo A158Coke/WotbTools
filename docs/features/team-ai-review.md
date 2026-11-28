@@ -83,7 +83,7 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
 FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考带 knowledge provenance（`PhasePositionReference`：accountId / team / x / z / knowledge / observedAtSec / ageSec，knowledge 复用 canonical `PositionKnowledge`）：
 
 - **friendly actual combatant**（last position + 无 EntityLeave + 未阵亡）→ **CURRENT**（含 phase 内无新 PositionChanged 的 carry-forward，与 canonical BattleTimeline 同口径）；
-- **enemy** → 最后观测 age ≤ canonical 当前阈值（`BattleTimelineBuilder.POSITION_GAP_SEC=5s`）→ **CURRENT**，否则 **LAST_KNOWN**；
+- **enemy** → 最后观测落在活跃 AoI 观察段（`ReplayAoiLifecycle.segmentAt` 判活跃）→ **CURRENT**，否则 **LAST_KNOWN**；
 - **exact 阵型/覆盖/距离数学只消费 CURRENT**：enemy LAST_KNOWN 不得满足 current-position completeness、不得作为当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标，也不生成 memberDist/referenceDist/relativeDepthM exact 距离；
 - CURRENT 不完整时 FormationDepth fail-close 只输出 `POSITION_COVERAGE_INSUFFICIENT` + CURRENT presence + 独立信息段 `ENEMY_LAST_KNOWN_POSITION_REFERENCES`（account + region + observedAtSec + ageSec + knowledge=LAST_KNOWN，不伪装 current）；RelativeDepthHp 直接 fail-close 该 phase 的 exact 距离测量；
 - **Region presence 基于 resolved 车辆位置 state**（每辆 CURRENT 车辆 +1，不是位置包数量）——同一车辆 100 个包 presence 仍 1，coverageCompleteness 与 presence 同一套 resolved state；
@@ -286,7 +286,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 - `ReplayWorkspace.vue`：工作台编排层（回放 / 射击 / AI 标签与 2D/3D/事件流内部能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果。
 - AI Review 权限：已登录且 realm role 含 `wotbtools-user` 或 `wotbtools-admin`；登录成功但缺 role 时渲染显式权限态，不静默隐藏入口。投影未就绪时显示准备中/失败状态，失败可触发重建投影。
-- `FileDrop.vue`：全站唯一的上传面，超限拒绝；回放列表的单个移除与清空全部由 `ReplayCollectionManager.vue` 提供，AI 复盘分析 BattlePicker 选中的当前场次。
+- `FileDrop.vue`：回放工作台 / AI 复盘域内唯一的上传面（HoF 提交对话框、地图 3D 预览另有各自的上传入口），超限拒绝；回放列表的单个移除与清空全部由 `ReplayCollectionManager.vue` 提供，AI 复盘分析 BattlePicker 选中的当前场次。
 - `AnalysisResultPanel.vue`：个人路径渲染最终 Markdown 报告；团队路径按 `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors` 分区渲染，空的可选区块不渲染；身份使用 `done.teamPlayers` 的 authoritative 映射，缺失时显示未知玩家/未知坦克。
 - `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），避免 AI 输出 `##一、` 时 `##` 字面显示；归一化逻辑在 `utils/markdownHeadingNormalize.js`，语义由 utils 单测 + markdown-it 断言覆盖。
 - 个人路径 `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）；团队结构化结果不追加。

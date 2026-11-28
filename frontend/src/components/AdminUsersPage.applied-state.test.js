@@ -128,17 +128,87 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     return {
       pageInfo: wrapper.find('.admin-page-info').text(),
       rowId: rows(wrapper)[0].find('.cell-mono').text(),
-      size: wrapper.find('.admin-pagination select').element.value,
+      size: wrapper.get('[data-testid=admin-page-size] [aria-checked=true]').attributes('data-value'),
       segment: wrapper.find('.segmented-option.is-active').attributes('data-value'),
     }
   }
 
-  async function chooseOption(selector, value) {
-    const select = wrapper.find(selector)
-    select.element.value = value
-    select.element.dispatchEvent(new Event('change', { bubbles: true }))
+  it('keeps unsubmitted search and identity provider drafts out of pagination and the applied chips', async () => {
+    wrapper = mountPage()
     await flushPromises()
-  }
+    const alias = wrapper.get('[data-testid=admin-idp-input]')
+    await alias.setValue('qq')
+    await wrapper.get('[data-testid=admin-search-btn]').trigger('click')
+    await flushPromises()
+    const bar = wrapper.getComponent({ name: 'AdminFilterBar' })
+    expect(bar.props('chips')[0].label).toContain('qq')
+    await alias.setValue('steam')
+    await wrapper.get('[data-testid=admin-search-input]').setValue('new draft')
+    expect(bar.props('chips')[0].label).toContain('qq')
+    await wrapper.get('.admin-page-next').trigger('click')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 1, idpAlias: 'qq' }))
+    bar.vm.$emit('remove', 'idpAlias')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 0, idpAlias: '' }))
+    expect(wrapper.get('[data-testid=admin-search-input]').element.value).toBe('new draft')
+    expect(alias.element.value).toBe('steam')
+  })
+  it('keeps the successful segment and page after a failed switch, including the next page query', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    const before = appliedText()
+    api.searchUsers.mockRejectedValueOnce(new Error('503'))
+    await wrapper.get('[data-testid=admin-segment-local]').trigger('click')
+    await flushPromises()
+    expect(appliedText()).toEqual(before)
+    await wrapper.get('.admin-page-next').trigger('click')
+    await flushPromises()
+    expect(api.searchUsers.mock.lastCall[1]).toMatchObject({ segment: 'keycloak', page: 1 })
+    expect(appliedText()).toMatchObject({ rowId: 'kc-keycloak-p1', segment: 'keycloak' })
+  })
+
+  it('blocks removal of a previous segment chip until the replacement rows and segment commit together', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    const alias = wrapper.get('[data-testid=admin-idp-input]')
+    await alias.setValue('qq')
+    await alias.trigger('keyup.enter')
+    await flushPromises()
+
+    const request = Promise.withResolvers()
+    api.searchUsers.mockReturnValueOnce(request.promise)
+    await wrapper.get('[data-testid=admin-segment-local]').trigger('click')
+    const bar = wrapper.getComponent({ name: 'AdminFilterBar' })
+    expect(bar.props('removeDisabled')).toBe(true)
+    const calls = api.searchUsers.mock.calls.length
+    bar.vm.$emit('remove', 'idpAlias')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenCalledTimes(calls)
+    request.resolve(pageResult([kcUser('local-row')], 0, 25, 1, 1))
+    await flushPromises()
+    expect(appliedText()).toMatchObject({ rowId: 'local-row', segment: 'local' })
+    expect(bar.props('chips')).toEqual([])
+    expect(alias.element.value).toBe('')
+  })
+
+  it('retains the successful page, size and selection when a page or size request fails', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('.admin-page-next').trigger('click')
+    await flushPromises()
+    await rows(wrapper)[0].get('input[type=checkbox]').setValue(true)
+    const before = appliedText()
+    api.searchUsers.mockRejectedValueOnce(new Error('503'))
+    await wrapper.get('.admin-page-next').trigger('click')
+    await flushPromises()
+    expect(appliedText()).toEqual(before)
+    api.searchUsers.mockRejectedValueOnce(new Error('503'))
+    await wrapper.get('[data-testid=admin-page-size] [data-value="50"]').trigger('click')
+    await flushPromises()
+    expect(appliedText()).toEqual(before)
+    expect(rows(wrapper)[0].get('input[type=checkbox]').element.checked).toBe(true)
+  })
 
   it('CASE A: offline next-page click keeps the applied page and rows', async () => {
     wrapper = mountPage()
@@ -172,10 +242,11 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     await flushPromises()
     api.searchUsers.mockClear()
 
-    await chooseOption('.admin-pagination select', '50')
+    wrapper.getComponent('[data-testid=admin-page-size]').vm.$emit('update:modelValue', '50')
+    await flushPromises()
 
     expect(api.searchUsers).not.toHaveBeenCalled()
-    expect(wrapper.find('.admin-pagination select').element.value).toBe('25')
+    expect(wrapper.get('[data-testid=admin-page-size] [aria-checked=true]').attributes('data-value')).toBe('25')
     expect(wrapper.find('.admin-page-info').text()).toBe(before.pageInfo)
     expect(rows(wrapper)[0].find('.cell-mono').text()).toBe(before.rowId)
   })

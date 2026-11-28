@@ -6,6 +6,7 @@ import { formatXpCompact } from '../utils/xpFormat.js'
 import { romanLevel } from '../utils/tierFormat.js'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
+import TankCoverNation from './TankCoverNation.vue'
 
 interface TechNode {
   stem: string
@@ -63,6 +64,8 @@ const props = defineProps<{
   error: string
   tierRows: TierRow[] | null
   grid: GridLayout | null
+  /** 当前树国别：节点卡封面用它取布旗背景（整棵树同一国）。 */
+  nation: string
   summaries: Readonly<Record<string, TankSummary>>
   costByStem: ReadonlyMap<string, number>
   imageUrl: (tankId: number) => string
@@ -143,6 +146,7 @@ function hideBrokenImage(event: Event) {
         >
           <span class="tt-card">
             <span class="tt-card-icon">
+              <TankCoverNation :nation="nation" />
               <img :src="imageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconStyle(node.tankId)" @error="hideBrokenImage">
             </span>
             <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
@@ -189,6 +193,7 @@ function hideBrokenImage(event: Event) {
         >
           <span class="tt-card">
             <span class="tt-card-icon">
+              <TankCoverNation :nation="nation" />
               <img :src="imageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconStyle(node.tankId)" @error="hideBrokenImage">
             </span>
             <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>

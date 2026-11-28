@@ -234,7 +234,9 @@ function maybeAutoStart(): void {
   if (!S.online.value.available || !S.webgl.supported || props.blockedReason) return
   if (!S.requireFeature(Feature.PLAYBACK_3D)) return
   const resume = S.resumePending?.value === true
-  if (!resume && (!autoStart.available.value || !autoStart.enabled.value)) return
+  // 没有 Profile 用户标识（本地 / fixture / 未登录）时没有可关闭的偏好，默认直接开始；
+  // 已登录用户仍尊重 Profile 的自动播放开关。
+  if (!resume && autoStart.available.value && !autoStart.enabled.value) return
   if (resume && !S.claimResume?.()) return
   startReplay()
 }
