@@ -2,6 +2,8 @@
 import { computed, inject, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { Bell, PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
+import { HOF_PENDING_COUNT_KEY } from '../shared/hofPendingCount.js'
+import Badge from '../components/Badge.vue'
 import { unreadCount } from '../composables/useNotifications.js'
 import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -38,6 +40,16 @@ const showDevEnvironmentNotice = import.meta.env.DEV
 const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   ? 'environment.productionRemote'
   : 'environment.local'
+
+const pending = inject(HOF_PENDING_COUNT_KEY, null)
+const pendingStatus = computed(() => pending?.status.value ?? 'hidden')
+const pendingTotal = computed(() => pending?.snapshot.value?.total)
+const pendingBadge = computed(() => {
+  if (pendingStatus.value === 'loading') return '…'
+  if (pendingStatus.value === 'unknown') return '?'
+  if (pendingStatus.value !== 'ready' || !pendingTotal.value) return ''
+  return pendingTotal.value > 99 ? '99+' : String(pendingTotal.value)
+})
 
 const openNotifications = inject(NOTIFICATIONS_PANEL_KEY, null)
 const moreOpen = ref(false)
@@ -109,10 +121,19 @@ function linkAttrs(id) {
               v-bind="linkAttrs(item.id)"
               :to="to(item.view)"
               :title="rail ? $t(item.labelKey) : undefined"
+              :aria-label="item.id === 'hof-admin' && pendingStatus !== 'hidden'
+                ? $t(pendingStatus === 'ready' ? 'hofAdmin.pendingCount.navKnown' : 'hofAdmin.pendingCount.navUnknown', { name: $t(item.labelKey), total: pendingStatus === 'ready' ? pendingTotal : undefined }) : undefined"
               :data-testid="`nav-${item.id}`"
             >
-              <component :is="ADMIN_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
+              <span v-if="rail && item.id === 'hof-admin'" class="hof-admin-icon" :class="{ 'has-count': !!pendingBadge }" aria-hidden="true">
+                <component :is="ADMIN_NAV_ICONS[item.id]" :size="24" />
+                <Badge v-if="pendingBadge" :text="pendingBadge" :tone="pendingStatus === 'ready' ? 'info' : 'neutral'"
+                  class="hof-pending-badge" data-testid="hof-pending-badge" aria-hidden="true" />
+              </span>
+              <component :is="ADMIN_NAV_ICONS[item.id]" v-else :size="24" aria-hidden="true" />
               <span class="sidebar-label">{{ $t(item.labelKey) }}</span>
+              <Badge v-if="!rail && item.id === 'hof-admin' && pendingBadge" :text="pendingBadge" :tone="pendingStatus === 'ready' ? 'info' : 'neutral'"
+                class="hof-pending-badge" data-testid="hof-pending-badge" aria-hidden="true" />
             </RouterLink>
           </li>
         </ul>
@@ -316,6 +337,18 @@ function linkAttrs(id) {
 }
 
 .sidebar-link > svg { flex: none; }
+.hof-pending-badge { flex: none; margin-inline-start: auto; }
+.hof-admin-icon { display: grid; place-items: center; grid-template-columns: minmax(0, 1fr); inline-size: 100%; min-inline-size: 0; }
+.hof-admin-icon.has-count { grid-template-columns: minmax(0, 1fr) max-content; }
+.hof-admin-icon > svg { max-inline-size: 100%; }
+.hof-admin-icon.has-count > svg { justify-self: end; }
+.hof-admin-icon .hof-pending-badge {
+  align-self: start;
+  margin: 0;
+  padding-inline: 0;
+  min-inline-size: var(--space-4);
+  justify-content: center;
+}
 .sidebar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-link.is-active {

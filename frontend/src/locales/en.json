@@ -479,7 +479,22 @@
     "heroTotal": "Records"
   },
   "hofAdmin": {
+    "pendingCount": {
+      "navKnown": "{name}, {total} submissions awaiting 100-battle or 3 Marks review",
+      "navUnknown": "{name}, number awaiting 100-battle or 3 Marks review unknown",
+      "loading": "Loading the 100-battle and 3 Marks pending counts.",
+      "updating": "Updating the 100-battle and 3 Marks pending counts.",
+      "totals": "{total} awaiting review (100-battle: {hundred}, 3 Marks: {mark3}). Last checked {time}.",
+      "empty": "Nothing awaiting review (100-battle: {hundred}, 3 Marks: {mark3}). Last checked {time}.",
+      "refresh": "Refresh pending counts",
+      "offline": "Offline. Pending counts are unavailable.",
+      "unauthorized": "Sign in again to refresh pending counts.",
+      "forbidden": "You do not have permission to read pending counts.",
+      "timeout": "The pending count request timed out.",
+      "unavailable": "Pending counts are unavailable. Refresh to try again."
+    },
     "reviewQueue": "Review queue",
+    "proofLoadError": "Evidence image {number} could not be loaded",
     "reviewDetail": "Review details",
     "reviewBack": "Back to queue",
     "reviewPrev": "Previous",

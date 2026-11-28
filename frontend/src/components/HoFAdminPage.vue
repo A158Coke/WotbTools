@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
+import { useElementSize } from '@vueuse/core'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useI18n } from 'vue-i18n'
+import { HOF_PENDING_COUNT_KEY } from '../shared/hofPendingCount.js'
+import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import HoFAdminAudit from './HoFAdminAudit.vue'
@@ -11,11 +16,27 @@ import HoFAdminRecords from './HoFAdminRecords.vue'
 
 const { initPromise, isAuthenticated, tokenParsed, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
+const { isDrawerShell } = useBreakpoint()
 const hofAvailability = computed(() => availability(Feature.HALL_OF_FAME))
+
+const tabs = ref<HTMLElement | null>(null)
+const { height: tabsHeight } = useElementSize(tabs, { width: 0, height: 0 }, { box: 'border-box' })
 
 const canAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
   return Array.isArray(roles) && (roles.includes('HoF-admin') || roles.includes('wotbtools-admin'))
+})
+
+const pending = inject(HOF_PENDING_COUNT_KEY, null)
+const { t, locale } = useI18n()
+const pendingStatus = computed(() => pending?.status.value ?? 'hidden')
+const pendingDescription = computed(() => {
+  const sample = pending?.snapshot.value
+  if (pendingStatus.value === 'loading') return t(sample ? 'hofAdmin.pendingCount.updating' : 'hofAdmin.pendingCount.loading')
+  if (pendingStatus.value === 'unknown') return t('hofAdmin.pendingCount.' + (pending?.reason.value ?? 'unavailable'))
+  if (!sample || pendingStatus.value !== 'ready') return ''
+  const time = new Intl.DateTimeFormat(locale.value, { dateStyle: 'short', timeStyle: 'short' }).format(sample.sampledAt)
+  return t(sample.total ? 'hofAdmin.pendingCount.totals' : 'hofAdmin.pendingCount.empty', { ...sample, time })
 })
 
 const authPhase = ref('init')
@@ -61,7 +82,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </script>
 
 <template>
-  <div class="hof-admin">
+  <div class="hof-admin" :style="{ '--hof-tabs-height': tabsHeight + 'px' }" :class="{ 'uses-drawer': isDrawerShell }">
     <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-admin-connectivity"><p>{{ $t(hofAvailability.messageKey ?? '') }}</p></Banner>
     <div v-if="authPhase === 'login'" class="hof-admin-login muted">{{ $t('hofAdmin.login') }}</div>
 
@@ -72,7 +93,13 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 
     <template v-else>
       <ShowcaseHero compact section="admin" :kicker="$t('more.sections.admin')" :title="$t('hofAdmin.cardTitle')" />
-      <div class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
+      <div v-if="pendingStatus !== 'hidden'" class="hof-pending-summary" data-testid="hof-pending-summary">
+        <p role="status">{{ pendingDescription }}</p>
+        <AppButton type="button" size="sm" :disabled="pendingStatus === 'loading'" data-testid="hof-pending-refresh" @click="pending?.retry()">
+          {{ $t('hofAdmin.pendingCount.refresh') }}
+        </AppButton>
+      </div>
+      <div ref="tabs" class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
         <button
           v-for="tab in ADMIN_TABS"
           :key="tab.key"
@@ -87,19 +114,22 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <KeepAlive>
         <HoFAdminRecords v-if="activeTab === 'records'" key="records" ref="section" v-model:size="size" :ready="ready" />
         <HoFAdminAudit v-else-if="activeTab === 'audit'" key="audit" ref="section" :size="size" />
-        <HoFAdminModeration v-else-if="activeTab === 'hundred'" key="hundred" ref="section" v-model:size="size" kind="hundred" />
-        <HoFAdminModeration v-else key="mark3" ref="section" v-model:size="size" kind="mark3" />
+        <HoFAdminModeration v-else-if="activeTab === 'hundred'" key="hundred" ref="section" v-model:size="size" :capture-pending-settlement="pending?.captureInvalidation" kind="hundred" />
+        <HoFAdminModeration v-else key="mark3" ref="section" v-model:size="size" :capture-pending-settlement="pending?.captureInvalidation" kind="mark3" />
       </KeepAlive>
     </template>
   </div>
 </template>
 
 <style scoped>
-.hof-admin { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
+.hof-admin { --hof-tabs-top: calc(var(--header-h) + var(--space-2)); padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
+
+.hof-pending-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-block-end: var(--space-3); }
+.hof-pending-summary p { min-width: 0; margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 .hof-admin-tabs {
   position: sticky;
-  top: calc(var(--header-h) + var(--space-2));
+  top: var(--hof-tabs-top);
   z-index: var(--z-sticky);
   display: flex;
   gap: var(--space-1);
@@ -147,6 +177,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 
 @media (width < 768px) {
   .hof-admin { padding-block: var(--space-3) var(--space-10); }
-  .hof-admin-tabs { position: static; }
 }
+.uses-drawer .hof-admin-tabs,
+.uses-drawer :deep(.hof-admin-table th),
+.uses-drawer :deep(.hof-admin-table .actions) { position: static; }
 </style>

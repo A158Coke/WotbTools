@@ -1,5 +1,5 @@
 import type { components } from './generated/http-contract.js'
-import { ApiError, apiErrorFromResponse, apiFetch, requireOk } from '../utils/http.js'
+import { ApiError, apiErrorFromResponse, apiFetch, normalizeApiError, requireOk } from '../utils/http.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -109,7 +109,57 @@ export async function hofDownload(id: ResourceId) {
 }
 
 
-async function hofAdminRequest(url: string, options: RequestInit = {}) {
+type BackgroundRead = { signal: AbortSignal; bearer: string }
+
+export async function getHofPendingTotals(signal: AbortSignal): Promise<{ hundred: number; mark3: number }> {
+  const auth = useAuth()
+  const gate = useFeatureGate()
+  const epoch = auth.authEpoch()
+  const subject = auth.tokenParsed.value?.sub
+  function checkScope() {
+    if (signal.aborted || epoch !== auth.authEpoch() || subject !== auth.tokenParsed.value?.sub) throw new ApiError('REQUEST_ABORTED')
+    if (!subject || !auth.initialized.value || auth.authInitState.value !== 'authenticated' || !auth.authenticated.value || !auth.isHofAdmin.value) {
+      throw new ApiError('AUTH_FORBIDDEN')
+    }
+    const availability = gate.availability(Feature.HALL_OF_FAME)
+    if (availability.pending || !availability.available) throw new ApiError('NETWORK_ERROR')
+  }
+  checkScope()
+  const refreshed = await auth.ensureToken(30)
+  checkScope()
+  const bearer = auth.token()
+  if (!refreshed || !bearer) throw new ApiError('AUTH_UNAUTHENTICATED')
+
+  const params = { status: 'PENDING', page: 1, size: 1 }
+  const background = { signal, bearer }
+  async function readTotal(request: Promise<{ totalItems: number }>) {
+    try {
+      const { totalItems } = await request
+      if (!Number.isSafeInteger(totalItems) || totalItems < 0) throw new ApiError('INVALID_RESPONSE')
+      return totalItems
+    } catch (value) {
+      const error = normalizeApiError(value)
+      // 鉴权失败须立即交给调用方冻结；普通失败等待另一端，以免遮住同批 401/403。
+      if (error.status === 401 || error.status === 403) throw error
+      return error
+    }
+  }
+  const [hundred, mark3] = await Promise.all([
+    readTotal(hofAdminHundredList(params, background)),
+    readTotal(hofAdminMark3List(params, background)),
+  ])
+  checkScope()
+  if (hundred instanceof ApiError) throw hundred
+  if (mark3 instanceof ApiError) throw mark3
+  return { hundred, mark3 }
+}
+
+async function hofAdminRequest(url: string, options: RequestInit = {}, background?: BackgroundRead) {
+  if (background) {
+    return requireOk(await apiFetch(url, {
+      signal: background.signal, headers: { Authorization: `Bearer ${background.bearer}` },
+    }, 'silent'))
+  }
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
@@ -223,8 +273,8 @@ export async function hofHundredMyStatus(): Promise<Schemas['HundredUserStatus']
 }
 
 
-export async function hofAdminHundredList(params = {}): Promise<Schemas['HundredAdminPage']> {
-  const r = await hofAdminRequest(withQuery('/api/admin/hof/hundred/submissions', params))
+export async function hofAdminHundredList(params = {}, background?: BackgroundRead): Promise<Schemas['HundredAdminPage']> {
+  const r = await hofAdminRequest(withQuery('/api/admin/hof/hundred/submissions', params), {}, background)
   return readHofJson<Schemas['HundredAdminPage']>(r, validators.hundredAdminPageValidator)
 }
 
@@ -300,8 +350,8 @@ export async function hofMark3MyStatus(): Promise<Schemas['Mark3UserStatus']> {
 }
 
 
-export async function hofAdminMark3List(params = {}): Promise<Schemas['Mark3AdminPage']> {
-  const r = await hofAdminRequest(withQuery('/api/admin/hof/mark3/submissions', params))
+export async function hofAdminMark3List(params = {}, background?: BackgroundRead): Promise<Schemas['Mark3AdminPage']> {
+  const r = await hofAdminRequest(withQuery('/api/admin/hof/mark3/submissions', params), {}, background)
   return readHofJson<Schemas['Mark3AdminPage']>(r, validators.mark3AdminPageValidator)
 }
 

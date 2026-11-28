@@ -1,4 +1,6 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, shallowReactive, shallowRef, type Ref } from 'vue'
+
+export const PAGE_SIZES = ['20', '50', '100'].map(value => ({ value, label: value }))
 
 type Translate = (key: string) => string
 
@@ -32,6 +34,19 @@ export function createSelection(rowsRef: Ref<readonly { id: number }[]>) {
     keepOnly(ids: readonly number[]) { selected.value = [...ids] },
     clear() { selected.value = [] },
   }
+}
+
+// Chips describe the last successful result, including when a later request fails.
+export function createFilterState<T extends Record<string, string | number | null>>(defaults: T) {
+  const draft = shallowReactive({ ...defaults })
+  const applied = shallowRef<T>({ ...defaults })
+  function without(key: string) {
+    if (!Object.hasOwn(defaults, key)) return null
+    const field = key as keyof T
+    if (draft[field] === applied.value[field]) draft[field] = defaults[field]
+    return { ...applied.value, [field]: defaults[field] }
+  }
+  return { draft, applied, without }
 }
 
 export function uniqueValues<T extends string | number>(values: readonly (T | null | undefined)[]): T[] {

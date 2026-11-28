@@ -1,20 +1,5 @@
-
-.hof-admin {
-  width: min(1760px, calc(100% - 48px)) !important;
-  max-width: 1760px !important;
-}
-
-
 @media (min-width: 1081px) {
   .analysis-panel .panel-head {
     top: var(--header-h) !important;
   }
-}
-
-@media (width < 768px) {
-  .hof-admin {
-    width: 100% !important;
-    padding-inline: 12px !important;
-  }
-
 }
