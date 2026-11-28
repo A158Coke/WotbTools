@@ -25,7 +25,7 @@ import { apiErrorLabel } from '../utils/display.js'
 import { createAdminUsersRowPresenter } from './admin-users/adminUsersRow.ts'
 import './admin-list.css'
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const { rowName, rowState, fmtTime } = createAdminUsersRowPresenter(t)
 const { show: showError } = useError()
 const list = ref({
@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
     <p v-else-if="!loading" class="admin-list-empty">{{ $t('admin.empty') }}</p>
 
     <div v-if="totalPages > 0" class="admin-list-pagination admin-pagination">
-      <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
+      <span class="admin-page-info">{{ $t('admin.pageInfo', { page: (page + 1).toLocaleString(locale), total: totalPages.toLocaleString(locale), items: totalItems.toLocaleString(locale) }) }}</span>
       <div class="admin-list-pagination-controls">
         <div class="admin-page-step">
           <AppButton size="sm" class="admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</AppButton>

@@ -29,6 +29,20 @@ beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en';
 function page() { return mount(BattleDataAdminPage, { global: { provide: { [DIALOG_INLINE_KEY]: true } } }) }
 const openRow = (wrapper: ReturnType<typeof page>) => wrapper.find('[data-testid=battle-row-open]').trigger('click')
 describe('BattleDataAdminPage', () => {
+  it.each(['en', 'zh', 'ru'])('formats statistics in the selected language %s', async lang => {
+    locale.value = lang
+    state.summary.mockResolvedValue({ ...summary, totalBattles: 25001, windowBattles: 25001,
+      winnerTeams: [{ key: 1, count: 12345 }], daily: [{ key: '2026-10-28', count: 12345 }] })
+    const wrapper = page()
+    await flushPromises()
+    await wrapper.get('[data-testid=range-all]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.kpi strong').text()).toBe((25001).toLocaleString(lang))
+    expect(wrapper.get('[data-testid=battle-trend]').text()).toContain((12345).toLocaleString(lang))
+    expect(wrapper.get('.distributions').text()).toContain(new Intl.NumberFormat(lang, { style: 'percent', minimumFractionDigits: 1 }).format(12345 / 25001))
+    wrapper.unmount()
+  })
+
   it('only shows filters from the successful request while the draft changes', async () => {
     const wrapper = page(); await flushPromises()
     await wrapper.get('form input.admin-list-input').setValue('11.99')
@@ -269,7 +283,7 @@ describe('BattleDataAdminPage', () => {
     finishList({ items: [{ ...battle, id: '2', arenaId: 'new-range', mapKey: 'malinovka', clientVersion: '11.19' }], nextCursor: null })
     await flushPromises()
     expect(wrapper.text()).toContain('new-range')
-    expect(wrapper.text()).toContain('4242')
+    expect(wrapper.text()).toContain('4,242')
     expect(wrapper.text()).not.toContain('18446744073709551615')
     expect(state.battles).toHaveBeenCalledTimes(2)
     const summaryQuery = state.summary.mock.calls.at(-1)![0] as { from: string; to: string }
