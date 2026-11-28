@@ -12,6 +12,8 @@
 
 共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 盛夏 / 寒冬、手机短视口、平板、桌面及打开期间的视口高度变化。
 
+版本变更页的版本对使用 `AppSelectMenu`，浮层在可用空间内与触发按钮等宽，沿用菜单的 `surface-3` 底色和 `elevation-2` 阴影。回放的 `BattlePicker` 在弹出式布局中按 Reka 提供的可用空间限高，搜索框保持可见，场次列表在面板内滚动。`test:browser-interaction menu-viewport` 在 844 × 310 视口打开 14 场的列表，检查浮层边界并点选最后一场。
+
 ## 文本选择边界（控件 chrome）
 
 交互控件 chrome 的文字不可被长按选中：全局 `button { user-select: none }`（`frontend/src/styles/app-shell.css`）与侧栏导航链接 `.sidebar-link`（`AppSidebar.vue`）。原因：GeckoView 下一旦存在活动选区，落在文字上的拖动会被引擎解释为「扩展选区」而不是滚动，误长按控件选中文字后继续滑动即表现为严重卡顿（桌面浏览器无此行为，不受影响）。适用范围只有控件 chrome——正文段落、表格、页脚备案链接等内容文本不受影响，仍可长按选中与复制；`input` / `textarea` 也不受影响。正文内容已有选区时的拖动=扩展选区是引擎行为，不在本次 CSS 缓解范围内。

@@ -59,6 +59,7 @@
   font: var(--type-body);
 }
 
+.vd-pair-trigger:focus-visible,
 .vd-select:focus-visible,
 .vd-search input:focus-visible,
 .vd-tab:focus-visible,

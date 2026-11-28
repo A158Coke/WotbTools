@@ -121,7 +121,7 @@ onDeactivated(() => setOpen(false))
       </PopoverTrigger>
 
       <PopoverPortal v-if="!isCompact" :disabled="inline">
-        <PopoverContent class="picker-panel" align="start" :side-offset="4" data-testid="battle-picker-panel" @keydown.capture.tab.stop="onPanelTab">
+        <PopoverContent class="picker-panel" align="start" :side-offset="4" :collision-padding="8" data-testid="battle-picker-panel" @keydown.capture.tab.stop="onPanelTab">
           <ReuseBody />
         </PopoverContent>
       </PopoverPortal>
@@ -161,8 +161,11 @@ onDeactivated(() => setOpen(false))
 
 :deep(.picker-panel) {
   z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
   width: 360px;
-  max-width: calc(100% - var(--space-4));
+  max-width: var(--reka-popover-content-available-width);
+  max-height: var(--reka-popover-content-available-height);
   padding: var(--space-2);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
@@ -171,10 +174,11 @@ onDeactivated(() => setOpen(false))
 }
 :deep(.picker-panel[data-state="open"]) { animation: wotb-picker-in var(--duration-fast) var(--ease-standard); }
 
-.picker-listbox { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-1); max-height: 420px; }
+.picker-listbox { display: flex; flex-direction: column; gap: var(--space-1); min-height: 0; max-height: 420px; }
 
 .picker-search {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-h-md);
@@ -188,7 +192,7 @@ onDeactivated(() => setOpen(false))
 .picker-search:focus-within { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 .picker-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); outline: 0; }
 
-.picker-list { margin: 0; padding: 0; overflow-y: auto; outline: 0; }
+.picker-list { min-height: 0; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; outline: 0; }
 
 .picker-option {
   display: grid;
