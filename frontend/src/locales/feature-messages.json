@@ -68,9 +68,6 @@
       "loading": "正在加载…",
       "login_required": "请先登录 WotBTools 账号后再下载 Android 安装包"
     },
-    "home": {
-      "replayParse": "回放解析"
-    },
     "upload": {
       "clear_confirm": "清空后需重新选择回放，确定清空？",
       "cancel": "取消",
@@ -1351,9 +1348,6 @@
       "loading": "Loading…",
       "login_required": "Please sign in to your WotBTools account before downloading the Android package"
     },
-    "home": {
-      "replayParse": "Replay Analysis"
-    },
     "upload": {
       "clear_confirm": "You will need to choose your replays again. Clear anyway?",
       "cancel": "Cancel",
@@ -2633,9 +2627,6 @@
       "apk_unavailable": "APK пока недоступен",
       "loading": "Загрузка…",
       "login_required": "Войдите в аккаунт WotBTools перед загрузкой Android-пакета"
-    },
-    "home": {
-      "replayParse": "Анализ реплеев"
     },
     "upload": {
       "clear_confirm": "Реплеи придётся выбрать заново. Очистить?",

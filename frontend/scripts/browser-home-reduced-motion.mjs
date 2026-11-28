@@ -5,7 +5,7 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 const DESKTOP_WINDOW = '--window-size=1440,900'
 const DESKTOP_POINTER = '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'
-const HOME_READY = `document.querySelectorAll('.home-feature, .home-card').length >= 4 && !!document.querySelector('.home-hero-line')`
+const HOME_READY = `!!document.querySelector('.home-hero-line') && !!document.querySelector('[data-testid=home-version-diff]')`
 
 function homeMotionProbe() {
   const read = (selector) => {
@@ -13,19 +13,13 @@ function homeMotionProbe() {
     if (!element) return null
     const style = getComputedStyle(element)
     return {
-      animationName: style.animationName,
-      animationDuration: style.animationDuration,
       transitionProperty: style.transitionProperty,
+      animationName: style.animationName,
       transitionDuration: style.transitionDuration,
-      animationRange: style.animationRange,
       transform: style.transform,
     }
   }
   return {
-    supports: {
-      viewTimeline: CSS.supports('animation-timeline: view()'),
-      scrollTimeline: CSS.supports('animation-timeline: scroll()'),
-    },
     viewport: { width: innerWidth, height: innerHeight },
     media: {
       hover: matchMedia('(hover: hover)').matches,
@@ -34,19 +28,12 @@ function homeMotionProbe() {
       noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
     },
     line: read('.home-hero-line'),
-    accent: read('.home-hero-line.is-accent'),
-    subtitle: read('.home-hero-subtitle'),
-    heroInner: read('.home-hero-inner'),
-    shot: read('.home-card'),
-    figure: read('.home-card-figure'),
-    image: read('.home-card-figure img'),
-    decor: read('.home-hero-decor'),
-    ctaArrow: read('.home-cta svg'),
+    updateArrow: read('.home-update-link > svg:last-child'),
+    ctaArrow: read('.home-download-arrow'),
   }
 }
 
 const durationSeconds = (value) => Math.max(0, ...(value || '').split(',').map((part) => parseFloat(part) || 0))
-const hasAnimation = (state) => Boolean(state) && state.animationName !== 'none' && durationSeconds(state.animationDuration) > 0
 const hasTransition = (state) => Boolean(state) && state.transitionProperty !== 'none' && durationSeconds(state.transitionDuration) > 0
 const check = (failures, ok, message) => { if (!ok) failures.push(message) }
 
@@ -62,14 +49,8 @@ async function openHome(env, motion) {
   const page = new Page(env.chrome.client, sessionId)
   await page.enable()
   await setMotionPreference(env.chrome, sessionId, motion)
-  await page.goto(`${env.origin}/`)
-  await page.waitForValue(HOME_READY, (ready) => ready === true, { label: 'homepage showcase ready' })
-  await page.waitForValue(
-    `(() => { document.querySelector('.home-cards')?.scrollIntoView({ block: 'center' }); return [...document.querySelectorAll('.home-card-figure img')].every((img) => img.complete) })()`,
-    (ready) => ready === true,
-    { label: 'showcase images loaded' },
-  )
-  await page.evaluate('window.scrollTo(0, 0)')
+  await page.goto(`${env.origin}/?view=home&assets=${encodeURIComponent(env.origin)}`)
+  await page.waitForValue(HOME_READY, Boolean, { label: 'homepage ready' })
   return { page, targetId }
 }
 
@@ -98,38 +79,19 @@ async function runReducedMotion(env) {
     check(failures, before.media.reduce === true, 'Emulation.setEmulatedMedia did not enable reduce')
     check(failures, before.viewport.width >= 1200, `desktop viewport required for hover regression (got width ${before.viewport.width})`)
     check(failures, before.media.hover === true && before.media.fine === true, `desktop hover/fine pointer capability missing (hover=${before.media.hover}, fine=${before.media.fine})`)
-    for (const key of ['line', 'accent', 'subtitle', 'heroInner', 'shot']) {
-      check(failures, before[key]?.animationName === 'none', `reduce: ${key} must not run animation (got ${before[key]?.animationName})`)
-    }
-    check(failures, before.decor?.animationName === 'none', `reduce: hero decor must not run parallax (got ${before.decor?.animationName})`)
-    check(failures, before.figure?.transform === 'none', `reduce: screenshot figure must start untransformed (got ${before.figure?.transform})`)
-    check(failures, before.image?.transform === 'none', `reduce: screenshot image must start untransformed (got ${before.image?.transform})`)
-    check(failures, before.ctaArrow?.transform === 'none', `reduce: CTA arrow must start untransformed (got ${before.ctaArrow?.transform})`)
-    check(failures, durationSeconds(before.image?.transitionDuration) === 0, `reduce: screenshot image transition must be zero (got ${before.image?.transitionDuration})`)
-    check(failures, durationSeconds(before.figure?.transitionDuration) === 0, `reduce: screenshot figure transition must be zero (got ${before.figure?.transitionDuration})`)
+    check(failures, before.updateArrow?.transform === 'none', 'reduce: version arrow must start untransformed')
+    check(failures, !hasTransition(before.updateArrow), 'reduce: version arrow must have no transition')
+    check(failures, !hasTransition(before.ctaArrow), 'reduce: download arrow must have no transition')
+    check(failures, before.line?.animationName === 'none', 'reduce: hero entrance must be disabled')
 
-    await hover(page, '.home-card-figure')
-    const afterShot = await page.probe(homeMotionProbe)
-    check(failures, afterShot.figure?.transform === before.figure?.transform, 'reduce: screenshot hover must not lift the figure')
-    check(failures, afterShot.image?.transform === before.image?.transform, 'reduce: screenshot hover must not zoom the image')
+    await hover(page, '.home-update-link')
+    const afterUpdate = await page.probe(homeMotionProbe)
+    check(failures, afterUpdate.updateArrow?.transform === before.updateArrow?.transform, 'reduce: version card hover must not move the arrow')
 
     await hover(page, '.home-cta')
     const afterCta = await page.probe(homeMotionProbe)
     check(failures, afterCta.ctaArrow?.transform === before.ctaArrow?.transform, 'reduce: CTA hover must not translate the arrow')
 
-    await page.waitForValue(
-      `(() => {
-        const scroller = document.scrollingElement
-        if (!scroller) return null
-        scroller.scrollTop = scroller.scrollHeight
-        return {
-          decor: getComputedStyle(document.querySelector('.home-hero-decor')).transform,
-          shot: getComputedStyle(document.querySelector('.home-card')).animationName,
-        }
-      })()`,
-      (state) => state && state.shot === 'none' && state.decor === 'none',
-      { label: 'reduce: scroll reveal and parallax stay disabled' },
-    )
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
@@ -144,29 +106,22 @@ async function runMotionEnabled(env) {
     check(failures, before.media.noPreference === true, 'Emulation.setEmulatedMedia did not enable no-preference')
     check(failures, before.viewport.width >= 1200, `desktop viewport required for hover regression (got width ${before.viewport.width})`)
     check(failures, before.media.hover === true && before.media.fine === true, `desktop hover/fine pointer capability missing (hover=${before.media.hover}, fine=${before.media.fine})`)
-    check(failures, hasAnimation(before.line), 'no-preference: hero line must keep an entrance animation')
-    check(failures, hasAnimation(before.subtitle), 'no-preference: hero subtitle must keep an entrance animation')
-    check(failures, before.shot?.animationName !== 'none', 'no-preference: showcase block must keep its reveal animation')
-    check(failures, hasTransition(before.image), 'no-preference: screenshot image must keep its hover transition')
-    check(failures, before.image?.transform === 'none', `no-preference: image must start untransformed (got ${before.image?.transform})`)
-    if (before.supports.viewTimeline) {
-      check(failures, before.shot?.animationName?.startsWith('home-reveal'), `no-preference: scroll reveal must be active (got ${before.shot?.animationName})`)
-    }
-    if (before.supports.scrollTimeline) {
-      check(failures, before.decor?.animationName?.startsWith('home-parallax'), `no-preference: hero parallax must be active (got ${before.decor?.animationName})`)
-      check(failures, (before.decor?.animationRange || '').includes('640px'), `no-preference: hero parallax range token must resolve (got ${before.decor?.animationRange})`)
-    }
+    check(failures, before.line?.animationName?.startsWith('home-rise'), 'hero entrance should remain enabled')
+    const cover = await page.probe(fullPageCoverProbe)
+    check(failures, cover.coverBehindVersion && cover.reachesFooter, 'desktop cover should span the content through the version card')
+    check(failures, cover.statsExposeCover, 'desktop statistics should leave the cover visible')
+    check(failures, hasTransition(before.updateArrow), 'no-preference: version arrow must keep its hover transition')
 
-    await hover(page, '.home-card-figure')
+    await hover(page, '.home-update-link')
     await page.waitForValue(
-      `getComputedStyle(document.querySelector('.home-card-figure img')).transform`,
-      (transform) => transform !== 'none',
-      { timeout: 3000, label: 'no-preference: screenshot hover zoom' },
+      `getComputedStyle(document.querySelector('.home-update-link > svg:last-child')).transform`,
+      transform => transform !== 'none',
+      { timeout: 3000, label: 'no-preference: version card hover translates arrow' },
     )
 
     await hover(page, '.home-cta')
     await page.waitForValue(
-      `getComputedStyle(document.querySelector('.home-cta svg')).transform`,
+      `getComputedStyle(document.querySelector('.home-download-arrow')).transform`,
       (transform) => transform !== 'none',
       { timeout: 3000, label: 'no-preference: CTA hover translate' },
     )
@@ -181,7 +136,7 @@ async function runMotionEnabled(env) {
 const THEMES = ['summer', 'spring', 'autumn', 'winter']
 
 function glassProbe() {
-  const card = document.querySelector('.home-card')
+  const card = document.querySelector('.home-update-link')
   if (!card) return null
   const style = getComputedStyle(card)
   const resolveToken = (token) => {
@@ -202,7 +157,7 @@ function glassProbe() {
     },
     background: style.backgroundColor,
     backdrop: style.backdropFilter,
-    border: style.borderColor,
+    border: style.borderTopColor,
     opaque1: resolveToken('--color-surface-1'),
     opaque2: resolveToken('--color-surface-2'),
     opaque3: resolveToken('--color-surface-3'),
@@ -317,14 +272,75 @@ async function runGlassAccessibility(env) {
 }
 
 
-const chromeBinary = findChrome()
-const hofMiddleware = (request, response, next) => {
-  const path = request.url?.split('?')[0]
-  if (request.method !== 'GET' || path !== '/api/hof') { next(); return }
-  response.setHeader('Content-Type', 'application/json')
-  response.end(JSON.stringify({ items: [], page: 1, size: 1, totalItems: 0, totalPages: 0 }))
+function fullPageCoverProbe() {
+  const stage = document.querySelector('.home-stage')
+  const version = stage.querySelector('.home-update')
+  const footer = document.querySelector('.app-footer')
+  const stageRect = stage.getBoundingClientRect()
+  const cover = getComputedStyle(stage, '::before')
+  const stats = getComputedStyle(stage.querySelector('.home-stats'))
+  return {
+    statsExposeCover: stats.backgroundColor === 'rgba(0, 0, 0, 0)' && stats.backdropFilter === 'none',
+    coverBehindVersion: cover.backgroundImage.includes('url(') && cover.backgroundSize.includes('cover') &&
+      Math.abs(parseFloat(cover.height) - stageRect.height) <= 1 && version.getBoundingClientRect().bottom <= stageRect.bottom,
+    reachesFooter: Math.abs(stageRect.bottom - footer.getBoundingClientRect().top) <= 1 &&
+      footer.getBoundingClientRect().bottom >= innerHeight - 1,
+  }
 }
-const { server, origin } = await startFixtureServer({ middleware: hofMiddleware })
+
+async function runMobileNavigation(env) {
+  const failures = []
+  const { page, targetId } = await openHome(env, 'reduce')
+  try {
+    await page.emulate({ width: 390, height: 844 })
+    await page.waitForValue(`document.querySelector('[data-testid=home-update-versions]')?.textContent.trim()`,
+      value => value === '11.21.0_1 → 11.22.0', { label: 'latest comparison shown' })
+    const cover = await page.probe(fullPageCoverProbe)
+    check(failures, cover.coverBehindVersion && cover.reachesFooter, 'mobile cover should span the content through the version card')
+    check(failures, cover.statsExposeCover, 'mobile statistics should leave the cover visible')
+    const layout = await page.probe(() => {
+      return {
+        brandVisible: document.querySelector('.home-hero-line')?.textContent.includes('WotbTools'),
+        updateIsLast: document.querySelector('.home-stage').lastElementChild?.matches('.home-update'),
+        hasOverflow: document.documentElement.scrollWidth > innerWidth,
+        updateFollowsHero: document.querySelector('[data-testid=home-hero]').nextElementSibling?.matches('.home-update'),
+      }
+    })
+    check(failures, layout.brandVisible, 'mobile homepage should show WotbTools in the main heading')
+    check(failures, layout.updateIsLast, 'version changes should end the homepage')
+    check(failures, !layout.hasOverflow, 'mobile homepage should fit the viewport')
+    check(failures, layout.updateFollowsHero, 'version link should immediately follow the hero')
+    await page.tapSelector('[data-testid=home-version-diff]')
+    await page.waitForValue(
+      `Object.fromEntries(new URLSearchParams(location.search))`,
+      query => query.view === 'agent-version-diff' && query.from === '11.21.0_1' && query.to === '11.22.0',
+      { label: 'version changes links to the displayed comparison' },
+    )
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  return failures
+}
+
+const chromeBinary = findChrome()
+const comparison = (from, to) => ({
+  id: `${from}__${to}`, path: `${from}__${to}`,
+  from: { dataset: from, release: `${from}-fixture` },
+  to: { dataset: to, release: `${to}-fixture` },
+  counts: {},
+})
+const middleware = (request, response, next) => {
+  const path = request.url?.split('?')[0]
+  if (request.method === 'GET' && path === '/api/hof') {
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ items: [], page: 1, size: 1, totalItems: 0, totalPages: 0 }))
+    return
+  }
+  if (request.method !== 'GET' || path !== '/diffs/index.json') { next(); return }
+  response.setHeader('Content-Type', 'application/json')
+  response.end(JSON.stringify({ schema: 1, pairs: [comparison('11.21.0', '11.21.0_1'), comparison('11.21.0_1', '11.22.0')] }))
+}
+const { server, origin } = await startFixtureServer({ middleware })
 let chromeCdp = null
 const results = []
 try {
@@ -338,7 +354,7 @@ try {
     ],
   })
   const env = { origin, chrome: chromeCdp }
-  for (const [name, run] of [['home-reduced-motion', runReducedMotion], ['home-motion-enabled', runMotionEnabled], ['home-glass-accessibility', runGlassAccessibility]]) {
+  for (const [name, run] of [['home-reduced-motion', runReducedMotion], ['home-motion-enabled', runMotionEnabled], ['home-glass-accessibility', runGlassAccessibility], ['home-mobile-navigation', runMobileNavigation]]) {
     try {
       results.push({ name, failures: await run(env) })
     } catch (error) {
