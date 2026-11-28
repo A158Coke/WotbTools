@@ -178,6 +178,8 @@ try {
         const shot = await chrome.client.send('Page.captureScreenshot', { format: 'webp', quality: 80 }, page.sessionId)
         await writeFile(resolve(screenshotDirectory, view.replaceAll('&', '-') + '.webp'), Buffer.from(shot.data, 'base64'))
         await page.emulate({ width: 390, height: 844, touch: true, deviceScaleFactor: 1 })
+        // 跨断点时 --sidebar-w 会过渡；先等 shell 布局稳定再量 hero，避免量到过渡中的半宽内容区。
+        await page.animationsSettled()
         const mobile = await page.probe(heroProbe)
         assert.ok(mobile.width > 0 && mobile.width <= 390 && mobile.height > 0, view + ' mobile banner bounds')
         assert.ok(mobile.titleBottom <= mobile.heroBottom, view + ' mobile title bounds')
@@ -213,6 +215,7 @@ try {
       await page.animationsSettled()
       await assertTankDetailHeader()
       await page.emulate({ width: 390, height: 844, touch: true })
+      await page.animationsSettled()
       await assertTankDetailHeader()
       await page.tapSelector('[data-testid="tank-back"]', true)
       await page.waitFor(() => !!document.querySelector('.showcase-hero')?.getClientRects().length)
@@ -235,6 +238,7 @@ try {
       if (section === 'admin') {
         for (const width of [900, 1280, 1890]) {
           await page.emulate({ width, height: 900, touch: false, deviceScaleFactor: 1 })
+          await page.animationsSettled()
           const hero = await page.probe(heroProbe)
           assertDesktopCompact(hero, { section, position: '50% 45%' })
           assert.ok(hero.height >= Math.min(280, width * 0.28), 'users section must expand on desktop at ' + width)
@@ -248,6 +252,7 @@ try {
       }
       await page.emulate({ width: 390, height: 844, touch: true })
       await page.waitForValue(`window.innerWidth`, value => value === 390, { timeout: 20_000, label: 'mobile viewport applied' })
+      await page.animationsSettled()
       const mobile = await page.probe(heroProbe)
       assertMobileCompact(mobile, { section, position: mobilePosition })
       assert.ok(mobile.height >= heightLo && mobile.height <= heightHi, `mobile ${section} hero height must stay ${heightLo}-${heightHi}px: ${mobile.height}`)
@@ -305,11 +310,13 @@ try {
       assert.ok(text.textH <= text.contentH, `full hero text block on ${view} must fit inside the content grid`)
       await page.emulate({ width: 1920, height: 540, touch: false })
       await page.waitForValue(`window.innerHeight`, v => v === 540, { timeout: 20_000, label: 'short window applied' })
+      await page.animationsSettled()
       const short = await page.probe(probe)
       assert.ok(short.height <= 260, `full hero on ${view} must fall back to content height in short windows: ${short.height}`)
       assert.ok(short.titleBottom <= short.heroBottom, `short-window ${view} title must stay inside the banner`)
       await page.emulate({ width: 390, height: 844, touch: true })
       await page.waitForValue(`window.innerWidth`, v => v === 390, { timeout: 20_000, label: 'mobile viewport applied' })
+      await page.animationsSettled()
       const mobile = await page.probe(probe)
       assert.ok(mobile.height <= 280, `mobile full hero on ${view} must keep the portrait density: ${mobile.height}`)
       console.log(`[browser-showcase-hero] full-hero height ${view}: desktop=${desktop.height} short=${short.height} mobile=${mobile.height} kicker=${text.kickerH} title=${text.titleH} desc=${text.descriptionH} passed`)

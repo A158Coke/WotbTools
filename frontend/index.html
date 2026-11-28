@@ -50,6 +50,13 @@
       document.documentElement.setAttribute('data-theme', p === 'winter' ? 'light' : 'dark')
       var meta = document.querySelector('meta[name="theme-color"]')
       if (meta) meta.setAttribute('content', colors[p])
+      // 与 src/composables/useSidebar.js 的 key / 合法值一致：折叠偏好必须在首帧投影，
+      // 否则记住折叠的用户刷新后会在 JS 加载时多一次 240px→72px 的侧栏过渡动画。
+      var sidebar = 'expanded'
+      try {
+        if (localStorage.getItem('wotb-sidebar') === 'collapsed') sidebar = 'collapsed'
+      } catch (e) {}
+      document.documentElement.setAttribute('data-sidebar', sidebar)
     })()
   </script>
 </head>

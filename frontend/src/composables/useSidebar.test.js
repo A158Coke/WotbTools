@@ -14,6 +14,21 @@ describe('useSidebar：桌面侧边栏折叠偏好', () => {
     expect(document.documentElement.getAttribute('data-sidebar')).toBe('expanded')
   })
 
+  it('只有手动折叠才挂过渡属性，并在过渡结束后移除', async () => {
+    vi.useFakeTimers()
+    try {
+      const { useSidebar } = await import('./useSidebar.js')
+      const root = document.documentElement
+      root.removeAttribute('data-sidebar-motion')
+      useSidebar().toggle()
+      expect(root.getAttribute('data-sidebar-motion')).toBe('')
+      vi.advanceTimersByTime(400)
+      expect(root.hasAttribute('data-sidebar-motion')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('折叠后持久化，重新加载仍是折叠', async () => {
     const first = await import('./useSidebar.js')
     first.useSidebar().toggle()

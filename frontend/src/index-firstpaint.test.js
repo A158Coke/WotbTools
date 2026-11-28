@@ -13,12 +13,14 @@ function firstInlineScript(source) {
 
 const script = firstInlineScript(html)
 
-function runFirstPaint(stored) {
+function runFirstPaint(stored, storedSidebar) {
   window.localStorage.clear()
   if (stored !== undefined) window.localStorage.setItem('wotb-ui-profile', stored)
+  if (storedSidebar !== undefined) window.localStorage.setItem('wotb-sidebar', storedSidebar)
   const root = document.documentElement
   root.removeAttribute('data-ui-profile')
   root.removeAttribute('data-theme')
+  root.removeAttribute('data-sidebar')
   document.head.innerHTML = '<meta name="theme-color" content="#000000">'
   new Function(script)()
   return {
@@ -26,6 +28,7 @@ function runFirstPaint(stored) {
     theme: root.getAttribute('data-theme'),
     color: document.querySelector('meta[name="theme-color"]').getAttribute('content'),
     stored: window.localStorage.getItem('wotb-ui-profile'),
+    sidebar: root.getAttribute('data-sidebar'),
   }
 }
 
@@ -33,11 +36,18 @@ describe('index.html 首屏主题投影（无 FOUC）', () => {
   beforeEach(() => window.localStorage.clear())
 
   it.each(UI_PROFILES)('%s：首帧即投影 profile、深浅色与 theme-color', (profile) => {
-    expect(runFirstPaint(profile)).toEqual({ profile, theme: themeForProfile(profile), color: THEME_COLOR[profile], stored: profile })
+    expect(runFirstPaint(profile)).toEqual({ profile, theme: themeForProfile(profile), color: THEME_COLOR[profile], stored: profile, sidebar: 'expanded' })
   })
 
   it.each(['showcase', 'classic', 'auto'])('旧值 %s 映射为盛夏并写回', (legacy) => {
-    expect(runFirstPaint(legacy)).toEqual({ profile: 'summer', theme: 'dark', color: THEME_COLOR.summer, stored: 'summer' })
+    expect(runFirstPaint(legacy)).toEqual({ profile: 'summer', theme: 'dark', color: THEME_COLOR.summer, stored: 'summer', sidebar: 'expanded' })
+  })
+
+  it('侧栏折叠偏好在首帧投影，避免刷新后再触发一次过渡动画', () => {
+    expect(runFirstPaint(undefined, 'collapsed').sidebar).toBe('collapsed')
+    expect(runFirstPaint(undefined, 'expanded').sidebar).toBe('expanded')
+    expect(runFirstPaint(undefined).sidebar).toBe('expanded')
+    expect(runFirstPaint(undefined, 'legacy').sidebar).toBe('expanded')
   })
 
   it('没有存储或非法值：盛夏，不写入存储', () => {
@@ -50,6 +60,7 @@ describe('index.html 首屏主题投影（无 FOUC）', () => {
     for (const profile of UI_PROFILES) expect(html).toContain(`html[data-ui-profile="${profile}"]{`)
     expect(html).toMatch(/html\[data-ui-profile="winter"\]\{color-scheme:light;/)
     expect(script).not.toContain("'wotb-theme'")
+    expect(script).toContain("setAttribute('data-sidebar'")
   })
 
   it('不把 script 内容里的非结束标签当成结束标签', () => {

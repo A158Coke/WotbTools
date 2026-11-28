@@ -10,6 +10,52 @@ export const SHELL_OVERLAY_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 1440, height: 900, touch: false },
 ].map(size => ({ ...size, profile, name: `shell-overlay-${profile}-${size.width}x${size.height}` })))
 
+const SIDEBAR_RAIL_W = 72
+const SIDEBAR_FULL_W = 240
+
+async function sampleSidebarGeometry(page) {
+  return page.probe(async () => {
+    const read = () => {
+      const root = document.documentElement
+      const panel = document.querySelector('[data-testid=app-sidebar]')
+      const app = document.getElementById('app')
+      return {
+        token: Number.parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || 0,
+        panel: panel.getBoundingClientRect().width,
+        content: Number.parseFloat(getComputedStyle(app).paddingInlineStart) || 0,
+      }
+    }
+    const samples = [read()]
+    const start = performance.now()
+    while (performance.now() - start < 360) {
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      samples.push(read())
+    }
+    return samples
+  })
+}
+
+function assertSidebarSamples(failures, samples, label, expected, animated) {
+  const check = (ok, message) => { if (!ok) failures.push(message) }
+  const mids = samples.filter(sample => [sample.token, sample.panel, sample.content]
+    .every(value => value > SIDEBAR_RAIL_W + 1 && value < SIDEBAR_FULL_W - 1))
+  if (animated) {
+    check(mids.length > 0, `${label}: 过渡期间没有中间宽度，样本=${JSON.stringify(samples)}`)
+  } else {
+    check(mids.length === 0, `${label}: reduced-motion 下仍有中间宽度，样本=${JSON.stringify(samples)}`)
+  }
+  const last = samples.at(-1)
+  for (const key of ['token', 'panel', 'content']) {
+    check(Math.abs(last[key] - expected) <= 1, `${label}: 终值 ${key}=${last[key]}，期望 ${expected}`)
+  }
+  if (animated) {
+    for (const sample of samples) {
+      const values = [sample.token, sample.panel, sample.content]
+      check(Math.max(...values) - Math.min(...values) <= 1, `${label}: 三处宽度不同步，样本=${JSON.stringify(sample)}`)
+    }
+  }
+}
+
 export async function runShellOverlayScenario(env, scenario) {
   const { sessionId, targetId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
@@ -114,6 +160,45 @@ export async function runShellOverlayScenario(env, scenario) {
       await page.waitForValue('new URL(location.href).searchParams.get("view")', v => v === 'history')
       await assertNavigationMatrix()
     } else {
+      // 桌面侧栏伸缩动画：真实点击 + 运行时中间宽度采样，独立于源码判断（DC-MOT-01/02）。
+      // 折叠开关只在 >=1200px 的 expanded 档渲染；平板/抽屉外壳没有此控件。
+      if (scenario.width >= 1200 && !scenario.touch) {
+        // 跨断点进出抽屉外壳：外壳换档必须直接跳到 0 / 240，不保留过渡中的侧栏占位。
+        await page.emulate({ width: 390, height: 844, touch: true })
+        await page.waitForValue('window.innerWidth', value => value === 390, { label: 'drawer viewport applied' })
+        const drawerFrame = await page.evaluate(`(() => {
+          const style = getComputedStyle(document.documentElement)
+          const app = document.getElementById('app')
+          return {
+            token: parseFloat(style.getPropertyValue('--sidebar-w')) || 0,
+            padding: parseFloat(getComputedStyle(app).paddingInlineStart) || 0,
+          }
+        })()`)
+        check(drawerFrame.token === 0 && drawerFrame.padding === 0, `抽屉首帧不应保留侧栏占位：${JSON.stringify(drawerFrame)}`)
+        await page.emulate({ width: 1440, height: 900, touch: false })
+        await page.waitForValue('window.innerWidth', value => value === 1440, { label: 'desktop viewport restored' })
+        const desktopFrame = await page.evaluate(`parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'))`)
+        check(Math.abs(desktopFrame - SIDEBAR_FULL_W) <= 1, `回到桌面首帧应直接是 ${SIDEBAR_FULL_W}：${desktopFrame}`)
+
+        await page.waitForValue('!!document.querySelector("[data-testid=sidebar-collapse]")', Boolean, { label: 'sidebar collapse control' })
+        const initialToken = await page.evaluate(`parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'))`)
+        check(Math.abs(initialToken - SIDEBAR_FULL_W) <= 1, `桌面侧栏初始宽度应为 ${SIDEBAR_FULL_W}，实际 ${initialToken}`)
+        const widthTokens = await page.evaluate(`(() => { const style = getComputedStyle(document.documentElement); return { rail: parseFloat(style.getPropertyValue('--sidebar-rail-w')), full: parseFloat(style.getPropertyValue('--sidebar-full-w')) } })()`)
+        check(widthTokens.rail === SIDEBAR_RAIL_W && widthTokens.full === SIDEBAR_FULL_W, `侧栏宽度 token 与验收基线不一致：rail=${widthTokens.rail}, full=${widthTokens.full}`)
+        await tap('[data-testid=sidebar-collapse]')
+        assertSidebarSamples(failures, await sampleSidebarGeometry(page), 'sidebar collapse', SIDEBAR_RAIL_W, true)
+        await tap('[data-testid=sidebar-collapse]')
+        assertSidebarSamples(failures, await sampleSidebarGeometry(page), 'sidebar expand', SIDEBAR_FULL_W, true)
+        await env.chrome.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, sessionId)
+        await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await tap('[data-testid=sidebar-collapse]')
+        assertSidebarSamples(failures, await sampleSidebarGeometry(page), 'sidebar collapse reduced-motion', SIDEBAR_RAIL_W, false)
+        await env.chrome.client.send('Emulation.setEmulatedMedia', { features: [] }, sessionId)
+        await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await tap('[data-testid=sidebar-collapse]')
+        await page.waitForValue(`Math.abs(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) - ${SIDEBAR_FULL_W}) <= 1`, Boolean, { label: 'sidebar restored to expanded' })
+      }
+
       await tap('[data-testid=nav-more]')
       await page.waitForValue('!!document.querySelector("[data-testid=more-panel]")', Boolean)
       await page.animationsSettled()
