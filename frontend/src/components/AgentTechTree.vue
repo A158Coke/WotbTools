@@ -9,7 +9,6 @@ import { tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { loadTechTree } from '../utils/researchCatalog.js'
 import { techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { locationForView } from '../app/navigation'
-import ShowcaseHero from './ShowcaseHero.vue'
 import AppButton from './AppButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import TankCatalogIcon from './TankCatalogIcon.vue'
@@ -170,14 +169,13 @@ onMounted(() => {
 
 <template>
   <section class="techtree" data-testid="techtree">
-    <ShowcaseHero compact section="techtree" :kicker="t('nav.groups.reference')" :title="t('research.title')">
-      <template #actions>
-        <AppButton variant="secondary" data-testid="techtree-tankopedia" @click="openTankopedia">
-          <BookOpen :size="18" aria-hidden="true" />
-          {{ t('nav.tankopedia') }}
-        </AppButton>
-      </template>
-    </ShowcaseHero>
+    <header class="tt-header ui-card">
+      <h1>{{ t('research.title') }}</h1>
+      <AppButton variant="secondary" size="sm" data-testid="techtree-tankopedia" @click="openTankopedia">
+        <BookOpen :size="16" aria-hidden="true" />
+        {{ t('nav.tankopedia') }}
+      </AppButton>
+    </header>
 
     <p v-if="cacheState === 'error'" class="tt-status" role="status">{{ t('research.cache_unavailable') }}</p>
 
@@ -232,15 +230,24 @@ onMounted(() => {
 .techtree {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-6) var(--gutter) var(--space-12);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--gutter) var(--space-4);
   color: var(--color-text-primary);
   min-inline-size: 0;
-  block-size: calc(100dvh - var(--header-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  min-block-size: 0;
 }
 
-.techtree :deep(.showcase-hero-host) { flex: none; }
+.tt-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+}
+
+.tt-header h1 { margin: 0; min-inline-size: 0; font: var(--type-h2); overflow-wrap: anywhere; }
+.tt-header :deep(.app-button) { flex: none; min-block-size: var(--hit-min-comfortable); }
+
 .tt-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 .tt-tab { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); }
@@ -264,8 +271,8 @@ onMounted(() => {
 .tt-filters.is-sticky .tt-tab { flex: none; min-block-size: var(--hit-min-comfortable); }
 @media (width < 768px) {
   .techtree {
-    gap: var(--space-3);
-    padding-block: var(--space-4);
+    gap: var(--space-2);
+    padding-block: var(--space-3);
   }
   .tt-tabs {
     flex-wrap: nowrap;
@@ -275,11 +282,6 @@ onMounted(() => {
   }
   .tt-tabs::-webkit-scrollbar { display: none; }
   .tt-tab { flex: 0 0 auto; }
-}
-
-@media (orientation: landscape) and (height <= 520px) {
-  .techtree :deep(.showcase-hero) { display: none; }
-  .techtree :deep(.showcase-hero-host) { gap: 0; margin-block-end: 0; }
 }
 
 @media (height <= 520px) {

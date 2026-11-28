@@ -25,3 +25,4 @@ if [ "$STATUS" != "200" ]; then
   exit 1
 fi
 jq -e 'type == "object"' "$RUNNER_TEMP/asset-index.json" >/dev/null
+bash scripts/android-release/steps/check-agent-diffs-ready.sh "$ASSET_ORIGIN" "$STEP_STAGED_VERSIONNAME"

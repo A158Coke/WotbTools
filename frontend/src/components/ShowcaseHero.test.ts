@@ -46,7 +46,6 @@ describe('ShowcaseHero', () => {
 
   it('声明了 compactPosition 的分区注入 --hero-pos-compact，其余分区不注入（回退 position）', () => {
     expect(sectionHeroStyle('replay')['--hero-pos-compact']).toBe('center 50%')
-    expect(sectionHeroStyle('techtree')['--hero-pos-compact']).toBe('center 58%')
     for (const section of SECTION_HERO_IDS) {
       const style = sectionHeroStyle(section)
       if (SECTION_HEROES[section].compactPosition) continue

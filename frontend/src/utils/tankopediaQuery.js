@@ -205,7 +205,7 @@ export function selectTanks(tanks, state = {}) {
   return base.slice().sort(COMPARATORS[state.sort] || COMPARATORS[DEFAULT_SORT] || byName)
 }
 
-function tankCategory(value) {
+export function tankCategory(value) {
   const premium = value.is_premium
   const collector = value.is_collector
   if (premium === true || premium === 1) return 'premium'

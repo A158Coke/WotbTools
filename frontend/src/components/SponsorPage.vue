@@ -104,9 +104,9 @@ function isShown(type) {
   gap: var(--space-4);
   min-width: 0;
   padding: var(--space-6);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
 }
 .sponsor-card h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
 

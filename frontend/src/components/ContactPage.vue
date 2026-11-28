@@ -95,8 +95,8 @@ async function copyContact(contact) {
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-6);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-subtle);
+  background: var(--color-card);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
 }
 .contact-icon { color: var(--color-accent-text); }

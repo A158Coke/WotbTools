@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
 
     <div class="doc-main">
       <slot name="header" />
-      <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
+      <article ref="body" class="doc-body ui-card" @click="onBodyClick" v-html="doc.html"></article>
     </div>
 
     <nav v-if="doc.toc.length > 1" class="doc-toc" :aria-label="$t('doc.toc')" data-testid="doc-toc">

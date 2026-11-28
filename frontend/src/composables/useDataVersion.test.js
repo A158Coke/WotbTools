@@ -55,6 +55,17 @@ describe('useDataVersion', () => {
     localStorage.clear()
   })
 
+  it('datasetNavigationUrl resolves router-relative hrefs against the current origin', async () => {
+    const { datasetNavigationUrl } = await load()
+    // createWebHistory 的 router.resolve().href 是根相对路径：不能直接 new URL(href)。
+    const url = new URL(datasetNavigationUrl('/?view=agent-tankopedia&tank=3889', '11.21.0', 'https://wotbtools.com/some/path'))
+    expect(url.origin).toBe('https://wotbtools.com')
+    expect(url.pathname).toBe('/')
+    expect(url.searchParams.get('view')).toBe('agent-tankopedia')
+    expect(url.searchParams.get('tank')).toBe('3889')
+    expect(url.searchParams.get('data')).toBe('11.21.0')
+  })
+
   it('dataVersionUrl sets, removes and keeps other query parameters', async () => {
     const { dataVersionUrl } = await load()
     const set = new URL(dataVersionUrl('https://a/?view=replay&data=11.21.0', '11.22.0'))

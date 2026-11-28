@@ -348,9 +348,9 @@ const modeOptions = computed(() => [
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-2);
-  border: var(--border-width) solid var(--color-border-subtle);
+  border: var(--border-width) solid var(--color-card-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   color: inherit;
   cursor: pointer;
   text-align: start;

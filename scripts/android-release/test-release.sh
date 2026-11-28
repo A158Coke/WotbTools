@@ -14,6 +14,7 @@ trap 'rm -rf "$TMP"' EXIT
 export ROOT REAL_GIT REAL_HEAD RESOLVE RESOLVE_STAGED GUARDS TMP
 bash "$ROOT/scripts/android-release/test-release-delta.sh"
 bash "$ROOT/scripts/android-release/test-distribution.sh"
+python3 "$ROOT/scripts/android-release/test_agent_diffs_ready.py"
 
 COMMITTED_VERSION="$(sed -n 's/^wotbVersion=//p' "$ROOT/android/gradle.properties" | head -n1)"
 if [[ ! "$COMMITTED_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
