@@ -78,6 +78,7 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
   padding-top: calc(var(--header-block) + env(safe-area-inset-top));
 }
 
+:global(.app-main:has(> .home-stage)),
 :global(.app-main:has(> .view-loading)),
 :global(.app-main:has(> .view-load-error)) {
   display: flex;

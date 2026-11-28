@@ -158,6 +158,8 @@ jobs:
           # （生产「百场审核 Tab 不可见」回归，#827）
           - label: HoF admin sticky tabs
             script: test:browser-hof-admin-tabs
+          - label: Admin design contract
+            script: test:browser-admin-contract
           # Replay3D HUD SegmentedControl：受限宽度下 flex:none 不收缩 + 横向滚动 + coarse 命中面积
           - label: Replay3D HUD segmented control
             script: test:browser-replay3d-hud

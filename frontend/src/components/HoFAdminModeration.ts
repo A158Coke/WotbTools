@@ -66,28 +66,28 @@ interface ModerationDomain {
   screenshotName: (src: string, index: number) => string
   zoomTitleParams: Record<string, string> | undefined
   queueDamage: (row: ModerationRow) => number | null | undefined
-  compare: (t: Translate, detail: ModerationDetail, confirmed: Confirmed) => CompareRow[]
+  compare: (t: Translate, detail: ModerationDetail, confirmed: Confirmed, locale: string) => CompareRow[]
 }
 
-export function formatNumber(value: number | string | null | undefined) {
+export function formatNumber(value: number | string | null | undefined, locale: string) {
   if (value == null || value === '') return '-'
   const number = Number(value)
-  return Number.isFinite(number) ? number.toLocaleString() : '-'
+  return Number.isFinite(number) ? number.toLocaleString(locale) : '-'
 }
 
-function formatWinRate(value: number | string | null | undefined) {
+function formatWinRate(value: number | string | null | undefined, locale: string) {
   if (value == null || value === '') return '-'
   const number = Number(value)
   return Number.isFinite(number)
-    ? `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+    ? (number / 100).toLocaleString(locale, { style: 'percent', maximumFractionDigits: 2 })
     : '-'
 }
 
-export function fmtSize(bytes: number | null | undefined) {
+export function fmtSize(bytes: number | null | undefined, locale: string) {
   if (bytes == null) return ''
   if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' KB'
+  return (bytes / (1024 * 1024)).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' MB'
 }
 
 function screenshotFileName(src: string) {
@@ -122,9 +122,9 @@ export const MODERATION_DOMAINS: Record<ModerationKind, ModerationDomain> = {
     screenshotName: src => screenshotFileName(src),
     zoomTitleParams: undefined,
     queueDamage: row => row.approvedAverageDamage ?? row.claimedAverageDamage,
-    compare: (t, d, confirmed) => [
-      { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage)) },
-      { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount)) },
+    compare: (t, d, confirmed, locale) => [
+      { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage, locale), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage), locale) },
+      { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount, locale), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount), locale) },
     ],
   },
   mark3: {
@@ -147,12 +147,12 @@ export const MODERATION_DOMAINS: Record<ModerationKind, ModerationDomain> = {
     screenshotName: (src, index) => `mark3-${index + 1}-${screenshotFileName(src)}`,
     zoomTitleParams: { number: '' },
     queueDamage: row => row.claimedAverageDamage,
-    compare: (t, d, confirmed) => {
+    compare: (t, d, confirmed, locale) => {
       const winRate = confirmed(d.approvedWinRate, d.claimedWinRate)
       return [
-        { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount)) },
-        { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage)) },
-        { label: t('hofAdmin.reviewWinRate'), claimed: formatWinRate(d.claimedWinRate), confirmed: winRate == null ? '-' : formatWinRate(winRate) },
+        { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount, locale), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount), locale) },
+        { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage, locale), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage), locale) },
+        { label: t('hofAdmin.reviewWinRate'), claimed: formatWinRate(d.claimedWinRate, locale), confirmed: winRate == null ? '-' : formatWinRate(winRate, locale) },
       ]
     },
   },
