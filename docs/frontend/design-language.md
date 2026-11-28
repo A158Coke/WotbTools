@@ -64,7 +64,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
 | DC-THM-11 | MUST | 生产内容表面 | 当前页面级卡片/面板采用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`），当前表格、数据密集区、输入框、回放 HUD 采用纯色；这是实现事实而非未来设计禁令。任何扩展玻璃材质的生产变更必须先证明真实背景对比度、合成性能和不支持 `backdrop-filter` 时的纯色降级；场景根必须保持不透明（DC-THM-08） | 受控设计原型可先探索，生产需独立验收 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
-| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
+| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页季节主视觉铺满正文 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -80,7 +80,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **现有装饰插槽**（背景图/环境装饰的实现清单，不是后续材质设计的排他白名单）：
 
-1. 首页英雄区（`HomePage.vue` 自己拥有整屏主视觉；`ShowcaseHero` 的 `section` 变体只负责导航分区的页头，不改变首页）
+1. 首页英雄区（`HomePage.vue` 自己拥有贯穿版本入口的季节主视觉、下载支持按钮组和名人堂统计文字；`ShowcaseHero` 的 `section` 变体只负责导航分区的页头，不改变首页）
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
