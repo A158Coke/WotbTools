@@ -156,6 +156,11 @@ jobs:
           catalog["datasets"][0].pop("dataset_id")
           (root / "versions.json").write_text(json.dumps(catalog, indent=1) + "\n", encoding="utf-8")
           PY
+          diff_path='11.20.0__11.21.0/fixture-before__fixture-after'
+          mkdir -p "$work/assets/diffs/$diff_path" "$work/assets/current/diffs"
+          printf '%s\n' '{"schema":1,"pairs":[]}' > "$work/assets/diffs/index.json"
+          printf '%s\n' '{"schema":1,"pair":"fixture"}' > "$work/assets/diffs/$diff_path/summary.json"
+          printf '%s\n' 'wrong root' > "$work/assets/current/diffs/index.json"
           sed 's/^assets\.wotbtools\.com {/http:\/\/:8080 {/' deploy/assets/Caddyfile > "$work/Caddyfile"
 
           docker run --rm --entrypoint caddy \
@@ -181,6 +186,16 @@ jobs:
           # reused here against the disposable real Caddy process. This keeps ETag
           # parsing, timeouts, CORS, Range, and conditional GET behavior single-sourced.
           bash deploy/assets/verify.sh "$base"
+          curl --fail --silent --show-error --max-time 10 -D "$work/diffs.headers" \
+            -H 'Origin: https://wotbtools.com' "$base/diffs/index.json" > "$work/diffs.index.json"
+          cmp "$work/assets/diffs/index.json" "$work/diffs.index.json"
+          grep -Eqi '^cache-control: public, max-age=60, must-revalidate' "$work/diffs.headers"
+          grep -Eqi '^access-control-allow-origin: https://wotbtools\.com\s*$' "$work/diffs.headers"
+          curl --fail --silent --show-error --max-time 10 "$base/diffs/$diff_path/summary.json" \
+            > "$work/diffs.summary.json"
+          cmp "$work/assets/diffs/$diff_path/summary.json" "$work/diffs.summary.json"
+          missing_status="$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "$base/diffs/$diff_path/tanks/999.json")"
+          [[ "$missing_status" == 404 ]]
           bash deploy/assets/test-android-download-http.sh "$base" "$work/downloads"
           echo 'asset-origin Compose and Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
