@@ -1,3 +1,47 @@
+2026-11-28 · #1115 合并后 · main 3bfb6831b269a7350a6f26c57560c5fff74bdb8b
+实现 4fd3b55db3ffacc17e6ff64bbcefd5742d58f3e6 · Windows Chrome 158
+
+probe-scrollport rows 1 failures 0 []
+role-anonymous rows 10 failures 0 []
+role-member rows 10 failures 0 []
+role-site rows 10 failures 0 []
+role-hof rows 10 failures 0 []
+role-tournament rows 10 failures 0 []
+role-content rows 10 failures 0 []
+role-combined rows 10 failures 0 []
+theme-spring rows 8 failures 0 []
+theme-summer rows 8 failures 0 []
+theme-autumn rows 8 failures 0 []
+theme-winter rows 8 failures 0 []
+layout-android-360 rows 8 failures 0 []
+layout-android-412 rows 8 failures 0 []
+layout-iphone-390 rows 8 failures 0 []
+layout-iphone-se rows 8 failures 0 []
+layout-iphone-land rows 8 failures 0 []
+layout-tablet rows 8 failures 0 []
+layout-desktop rows 8 failures 0 []
+backdrop-desktop rows 1 failures 0 []
+render-1280-spring rows 8 failures 0 []
+render-1280-summer rows 8 failures 0 []
+render-1280-autumn rows 8 failures 0 []
+render-1280-winter rows 8 failures 0 []
+backdrop-mobile rows 1 failures 0 []
+render-390-spring rows 8 failures 0 []
+render-390-summer rows 8 failures 0 []
+render-390-autumn rows 8 failures 0 []
+render-390-winter rows 8 failures 0 []
+render-1280-autumn: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-spring: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-summer: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-winter: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-autumn: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-spring: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-summer: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-winter: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+主题、权限与解码的首轮实测在 8039e2717；后续 4fd3b55db 仅调整手机胜率条排布并增加卡片边界断言。七组布局、战斗数据专项及交付的八页桌面/手机截图均在修复后补跑。
+CI 初次报告 360px 视口文档宽 363px。同字体同夹具负对照 363px，修复后 360px；另测 330/350/360 × Windows 系统字体/DejaVu Sans/Ubuntu Sans，9/9 与视口等宽。
+常规宽屏背景淡入 0.3s；减少动效竖屏 0s；两种场景均延迟解码并在等待时切换主题。
+
 2026-11-28 · Windows Chrome 158 · 实现 0eb3ba36f1e7cbcaa2a6a9a2416209f2f4c10bda
 
 combo-matrix

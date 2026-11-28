@@ -1,6 +1,6 @@
 # 管理页 MUST 逐条验收
 
-2026-11-28 整合实现候选为 `0eb3ba36f1e7cbcaa2a6a9a2416209f2f4c10bda`，此前的专项回执绑定 `b2e2cafa7`。规则 ID、强度、适用范围和正式例外以[设计契约](../../../frontend/design-language.md)为准。本表逐条登记该版本的 75 条 MUST，保留页面摘要中的成功场景，也记录证据未覆盖的部分。
+合流后的实现候选为 `4fd3b55db3ffacc17e6ff64bbcefd5742d58f3e6`。本轮复验及截图见[最终组合](README.md#1115-合并后的最终组合)。原有专项回执分别绑定 `0eb3ba36f` 与 `b2e2cafa7`。规则 ID、强度、适用范围和正式例外以[设计契约](../../../frontend/design-language.md)为准。本表逐条登记该版本的 75 条 MUST，保留页面摘要中的成功场景，也记录证据未覆盖的部分。
 
 ## 样本与读法
 
@@ -19,11 +19,11 @@
 | DC-THM-02 | 真实材质叠合可读、可触控，覆盖设备性能和降级 | 横幅有像素取样，小屏有真实命中。未取得所有材质的设备合成性能与禁用滤镜对照。[V]、[M] | pending/unverified |
 | DC-THM-04 | 页头置于数据区上方，宽屏首屏可见数据 | 八页核对单一页头，截图覆盖用户、战斗数据、反馈、名人堂及赛事；未断言各内部状态的首屏数据位置。[M] | pending/unverified |
 | DC-THM-05 | 页头文字区域最不利像素通过对比度门槛 | 8 个入口在本候选按 390/1280 和四季重新取样，64 个组合均通过标题及短标签前景与实际背景的最差像素门槛。[V]、[取样记录](README.md#角色四季及视口) | compliant |
-| DC-THM-06 | 减少动效时页头无动画 | 紧凑页头自身样式无动画声明；未对所有继承样式和状态做运行时 reduced-motion 取样。[页头][Hero] | pending/unverified |
+| DC-THM-06 | 减少动效时页头无动画 | 四季、390/1280、八入口共 64 组均实际启用 reduced motion；从导航前监听页头动画及过渡事件，并检查后代动画，均为零。[M]、[页头][Hero] | compliant |
 | DC-THM-07 | 四季四层表面及实际玻璃叠合满足 AA | token 测试按真实图片和遮罩取样；未穷尽管理弹窗内所有叠合。[主题对比测试][Contrast] | pending/unverified |
 | DC-THM-08 | 场景根使用不透明表面 | 八个管理页均非回放、装甲或 3D 地图场景。[视图注册][Registry] | 不适用 |
 | DC-THM-09 | 环境背景由外壳统一渲染 | AppShell 的单一固定背景覆盖四边，使用背景 token、负层级及 pointer-events:none，页面复用该壳。[外壳][Shell] | compliant |
-| DC-THM-10 | 环境图解码后显示，减少动效时直接显示 | 代码中有解码及 reduced-motion 降级；冷缓存首屏切换未按八页实测。[Shell] | pending/unverified |
+| DC-THM-10 | 环境图解码后显示，减少动效时直接显示 | 共享外壳冷启动及主题切换时人工延迟 decode，检查可操作的首屏、等待期间透明度为零、旧请求不能显示新主题。桌面宽图解码后仅淡入，手机竖图在减少动效下立即显示。桌面／手机负对照在旧实现均失败。[Shell]、[M] | compliant |
 | DC-THM-11 | 卡片、表格、输入与玻璃降级符合表面约定 | 筛选栏有不支持 backdrop-filter 时的纯色回退；其他实际表面及设备性能仍待验。[筛选栏][Filter]、[Contrast] | pending/unverified |
 | DC-THM-12 | 分区页头用同一张主视觉，标题可读 | 八页使用管理分区图。图片由静态 import 经 Vite 发布，用户管理在宽屏核对背景满宽、保持比例及文字可读，手机验证原焦点构图。[分区资产][Art]、[V] | compliant |
 | DC-CLR-01 | 四季文字与 UI 图形符合对比度门槛 | 有 token、横幅和状态条取样；未测每个内联状态、禁用态与浮层文字组合。[Contrast]、[V] | pending/unverified |
@@ -33,7 +33,7 @@
 | DC-TYP-01 | 八页文本至少 12px，导航角标无小字例外 | 图标侧栏 99+ 的 11px 覆盖已移除，实测字体至少 12px 并检查命中及边界。其余页及弹层全部文本节点尚未盘点。[P] | pending/unverified |
 | DC-TYP-02 | 表格统计使用等宽数字及 locale 数字格式 | 战斗统计、用户汇总、名人堂审核已接入当前语言格式。三语用例覆盖 25,001、1,001 及百分比；其他表格及计时仍待全面核验。[战斗数据页][Battle]、[用户分页][D] | pending/unverified |
 | DC-TYP-03 | 超大展示字号限于横幅标题和关键数字 | 记录了八个 h1 实际字号。尚未逐项核对数据区所有值。[M] | pending/unverified |
-| DC-TYP-04 | 页面仅用系统字体 | 全站基础字体 token 使用系统字体栈；未逐一检查各状态下的网络字体请求。[尺寸与字体][Scale] | pending/unverified |
+| DC-TYP-04 | 页面仅用系统字体 | 正文字体和等宽字体使用系统栈。核对 src、public、入口 HTML 和前端依赖，未发现网络字体来源；64 个实际页面组合均无 Font 网络请求及已注册的下载字体。[Scale]、[M] | compliant |
 | DC-SIZ-01 | 触控目标满足契约最小尺寸 | L6 查遮挡；命中可达性不等于尺寸达标。未测全部可交互目标的 44×44 区域。[M]、[T] | pending/unverified |
 | DC-SIZ-02 | 层级经语义 token | 桌面地图筛选展开用已有层级 token；未核对各管理浮层的全部层级声明。[Filter] | pending/unverified |
 | DC-MOT-01 | 动效参数由共享策略持有 | 已有 motionPolicy 测试；未完成全部页面和第三方浮层的参数来源追踪。[动效测试][Motion] | pending/unverified |
@@ -46,7 +46,7 @@
 | DC-OCC-04 | 四种规定形态覆盖状态组合 | 审核上部、中下部、拒绝和通过确认已实测桌面、平板、手机与矮横屏。 [详情证据](README.md#2026-11-28-百场与三环审核详情)。已有 L6 五视口与抽屉、弹窗专项；未逐项遍历每种浮层组合。[M] | pending/unverified |
 | DC-RSP-01 | 全站三档断点及 CSS range 写法 | 新横幅复用 768px 边界，八入口按三档检查。所有存量样式分支未核完。[Hero]、[M] | pending/unverified |
 | DC-RSP-02 | 三档保留相同操作能力 | 筛选、审批、配置、录分有交互证据；所有页面的全部操作未在三档逐一执行。[D]、[H]、[T] | pending/unverified |
-| DC-RSP-03 | 360/390 根页面无横溢，宽表在容器内滚动 | 另已验证 360/390 的两个审核详情、列边界与正文末项。 [详情证据](README.md#2026-11-28-百场与三环审核详情)。8 个入口在两个宽度的根页面横溢检查通过，赛事和 HoF 另有宽表滚动断言。[M]、[T]、[H] | compliant |
+| DC-RSP-03 | 360/390 根页面无横溢，宽表在容器内滚动 | 已修复 Linux 360px 战斗数据卡片横溢，并检查每条胜率条的单元格边界。另已验证 360/390 的两个审核详情、列边界与正文末项。 [详情证据](README.md#2026-11-28-百场与三环审核详情)。8 个入口在两个宽度的根页面横溢检查通过，赛事和 HoF 另有宽表滚动断言。[M]、[T]、[H] | compliant |
 | DC-RSP-04 | 断点改布局，普通尺寸有伸缩边界 | 用户管理背景随页头尺寸等比覆盖；其他页面每个尺寸声明未逐一核对。[Hero] | pending/unverified |
 | DC-RSP-05 | 贴边元素避让四边安全区 | 五个 L6 视口断言真实 CSS env、可见控件、横屏抽屉；浮层专项未遍历全部安全区组合。[M]、[P]、[T] | pending/unverified |
 | DC-RSP-06 | hover 有媒体条件，核心操作无需悬停 | 审核、查询和导入可由触屏完成；所有 hover 样式未核完。[H]、[D]、[T] | pending/unverified |
@@ -61,7 +61,7 @@
 | DC-A11-05 | 可访问名称包含可见标签 | 待审导航模板把名称和完整数量传入三语 aria-label，浏览器核对 99+ 实际总数。未逐项验证所有长标签和截断操作。[Nav]、[P] | pending/unverified |
 | DC-A11-02 | 表单有标签，不能只用占位文本 | 地图 combobox、反馈状态 radio group 及用户搜索有名称；赛事和推荐的每个输入仍需核对可访问树。[B]、[D]、[T] | pending/unverified |
 | DC-A11-04 | 图片有 alt/装饰语义，非首屏懒加载并预留尺寸 | 页头配图为 aria-hidden 背景；证据图和推荐内容图未全部核对 alt、尺寸和加载时机。[Hero]、[H]、[C] | pending/unverified |
-| DC-FRM-02 | 表单允许粘贴 | 管理页输入自身未发现 paste 拦截；未在各编辑器中端到端执行粘贴。[D]、[T]、[C] | pending/unverified |
+| DC-FRM-02 | 表单允许粘贴 | 应用源无 paste、beforeinput、剪贴板数据或 Ctrl/Cmd+V 拦截。六个有可编辑字段的根入口实测共 128 个样本，含非空文本的粘贴事件均未被取消。规则只评价是否拦截，不代表真机软键盘验收。[M] | compliant |
 | DC-FRM-04 | 有草稿的 AppDialog 遮罩点击不丢内容 | 赛事 CSV/历史导入、清分/订正对话框显式配置 closeOnScrim；推荐配置的 CreatorForm 为页内表单。其余可编辑浮层仍需逐项验证。[赛事录分源码][Score]、[推荐编辑器][Editor] | pending/unverified |
 | DC-SEL-01 | 控件匹配固定或动态域的可能上限 | 地图、车辆、赛事和军团以大集合验证，短状态与胜方采用 Choice Group。尚未冻结推荐和赛事所有辅助字段的域上限。[B]、[D]、[H]、[T] | pending/unverified |
 | DC-SEL-02 | 两项互斥不得用下拉，已登记例外除外 | 反馈行内两态已实测为 radio group；名人堂单场 battleType、replayAvailable 和 sort 仍各有一项只减不增的已登记例外。[选择策略基线][Sel]、[D] | explicit exception（仅这三处） |
@@ -86,23 +86,23 @@
 | DC-CPY-02 | 文案符合术语表，无禁用词 | 现有测试检查词条，不等同于人工逐项核过三语术语。需针对八页和错误文案走查。[I18n]、[契约](../../../frontend/design-language.md) | pending/unverified |
 | DC-ACC-01 | 页面 PR 明列规则、主题、断点和人工盲区 | 四个页面 PR 及本目录记录角色、尺寸、规则、截图和真机边界。[实施 PR 列表][Rollup] | compliant |
 | DC-ACC-02 | 页面视觉改动有桌面/手机、盛夏/寒冬的前后截图 | 审核子流程有同夹具、旧基线及最终实现的桌面和手机分状态对照。 [详情证据](README.md#2026-11-28-百场与三环审核详情)。页面摘要有多组前后对照。HoF 车辆的固定样本为 1280 盛夏/390 寒冬，新增横幅几何示例为 1890 寒冬；缺失组合仍待补图。[截图索引](README.md)、[横幅对照](admin-users-hero.webp) | pending/unverified |
-| DC-ACC-03 | 受影响浏览器门禁通过 | 四个专项的本地实跑见下表；各页面最终面向 main 的 Required Gate、整合 CI 须按对应 SHA 独立核对。[CI 配置][CI] | pending/unverified |
+| DC-ACC-03 | 受影响浏览器门禁通过 | 合流后复跑受影响的管理矩阵、侧栏、目录、赛事、名人堂、战斗数据与页头专项；管理矩阵已纳入 CI。[本轮 CI](https://github.com/A158Coke/WotbTools/pull/1116/checks)、[实跑回执](local-browser-results.txt) | compliant |
 | DC-ACC-04 | 发现 WebView 与 Chromium 差异时补真机证据 | 已测 Chromium 触屏仿真。真实软键盘、Safari、GeckoView 未跑；若出现平台差异，需针对差异取得真机证据。[页面摘要](README.md) | pending/unverified |
 
 ## 仍阻止关单的事项
 
-本轮已修复 DC-TYP-02 的已知反例。75 条 MUST 中，14 条按所列范围符合，56 条待充分验证，1 条为明确例外，4 条不适用。表内未覆盖的适用 MUST 仍需对应的测试、人工复核或来自契约 owner 的明确例外。优先补全全页字号与焦点环、减少动效、表单及弹层状态、叠合可读性、触控尺寸和平台差异证据。PR 已批准或某个分片绿色不能替代这些结果。
+本轮已修复 DC-TYP-02 的已知反例。75 条 MUST 中，19 条按所列范围符合，51 条待充分验证，1 条为明确例外，4 条不适用。表内未覆盖的适用 MUST 仍需对应的测试、人工复核或来自契约 owner 的明确例外。优先补全全页字号与焦点环、减少动效、表单及弹层状态、叠合可读性、触控尺寸和平台差异证据。PR 已批准或某个分片绿色不能替代这些结果。
 
 ## 专项执行记录
 
-四个命令均从上述实现候选的 `frontend` 目录执行，使用本地 Chrome 和受控数据。它们均在 package.json 提供脚本；当前 [CI 工作流][CI] 未单独调用这四项。GitHub 上原有的交互分片有各自的 checkout、范围和结果，不能据此为这四项填写 PASS。
+下列命令从 `frontend` 目录执行，使用本地 Chrome 和受控数据。当前 [CI 工作流][CI] 单独执行管理契约矩阵，其余专项的本地运行另列。GitHub 上原有的交互分片有各自的 checkout、范围和结果，不能据此为这四项填写 PASS。
 
 | 本地命令 | 结果 | 独立覆盖 |
 |---|---|---|
 | `pnpm run test:browser-hof-pending` | 5/5 通过 | 5 种导航形态 |
 | `pnpm run test:browser-admin-directory` | 37/37 通过 | 18 个既有场景及 19 个三语分页、矮屏、俄语卡片场景 |
 | `pnpm run test:browser-tournament-admin` | 32/32 通过 | 两个赛事入口，含不同语言、视口与四季组合 |
-| `pnpm run test:browser-admin-contract` | 19/19 通过 | 7 组角色、7 组视口、4 组主题、1 个探针反例 |
+| `pnpm run test:browser-admin-contract` | 29/29 通过 | 7 组角色、7 组布局、4 组主题、8 组减少动效渲染、2 个背景解码场景、1 个探针反例 |
 
 [逐场景执行输出](local-browser-results.txt)。该提交后的矩阵和回执属于文档变更。
 
