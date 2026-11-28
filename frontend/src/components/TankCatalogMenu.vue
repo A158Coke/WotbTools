@@ -362,8 +362,15 @@ function choose(tank) {
 }
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 50%, var(--color-card-border)); }
-.tp-card.is-collector:not(.is-premium) { border-color: color-mix(in oklab, var(--color-info) 50%, var(--color-card-border)); }
+.tp-card.is-premium {
+  border-color: color-mix(in oklab, var(--color-warning) 50%, var(--color-card-border));
+  background: color-mix(in oklab, var(--color-warning) 12%, var(--color-card));
+}
+
+.tp-card.is-collector:not(.is-premium) {
+  border-color: color-mix(in oklab, var(--color-info) 50%, var(--color-card-border));
+  background: color-mix(in oklab, var(--color-info) 12%, var(--color-card));
+}
 .tp-card.is-premium .tp-card-name { color: color-mix(in oklab, var(--color-warning) 90%, var(--color-text-primary)); }
 .tp-card.is-collector:not(.is-premium) .tp-card-name { color: color-mix(in oklab, var(--color-info) 90%, var(--color-text-primary)); }
 .tp-card.is-premium .tp-stat-label,
