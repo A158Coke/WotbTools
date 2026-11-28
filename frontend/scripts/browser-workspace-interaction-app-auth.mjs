@@ -868,6 +868,29 @@ export async function runMenuViewportScenario(env, scenario) {
     await key('Escape', 27)
     await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
   }
+  if (scenario.width >= 1024) {
+    await page.goto(`${env.origin}/scripts/browser-fixtures/menu-button.html?profile=${scenario.profile}&battle`)
+    await page.emulate({ ...scenario, width: 844, height: 310 })
+    await tap('[data-testid=menu-trigger]')
+    await page.waitFor(() => !!document.querySelector('.picker-panel .picker-list'))
+    await page.waitForValue('document.getAnimations().every(a => a.playState !== "running")', Boolean,
+      { timeout: 3000, label: 'battle menu entry animation settled' })
+    const battleMenu = await page.probe(() => {
+      const panel = document.querySelector('.picker-panel')
+      const rect = panel.getBoundingClientRect()
+      const list = panel.querySelector('.picker-list')
+      const search = panel.querySelector('input').getBoundingClientRect()
+      return {
+        inside: rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth,
+        scrolls: list.clientHeight > 0 && list.scrollHeight > list.clientHeight,
+        searchVisible: search.top >= rect.top && search.bottom <= list.getBoundingClientRect().top,
+      }
+    })
+    if (!Object.values(battleMenu).every(Boolean)) throw new Error(`battle menu does not fit: ${JSON.stringify(battleMenu)}`)
+    await tap('[data-testid=battle-picker-option][data-value=r13]')
+    await page.waitFor(() => document.querySelector('[data-testid=menu-selected]')?.textContent === 'r13'
+      && !document.querySelector('.picker-panel'))
+  }
   results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
 }
 

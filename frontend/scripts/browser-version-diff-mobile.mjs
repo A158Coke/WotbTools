@@ -97,6 +97,36 @@ try {
       await page.tapSelector(entry, true)
       await page.waitFor(() => document.querySelector('.vd-title')?.textContent.includes('11.22.0') && !!document.querySelector('.vd-armor-preview'))
       await page.waitFor(() => !document.querySelector('[data-testid="nav-drawer"]'))
+      await page.tapSelector('.vd-pair-trigger', true)
+      await page.waitFor(() => !!document.querySelector('.app-select-menu [aria-selected="true"]'),
+        { label: 'version pair popup and selected row' })
+      const menu = await page.probe(() => {
+        const trigger = document.querySelector('.vd-pair-trigger').getBoundingClientRect()
+        const popup = document.querySelector('.app-select-menu')
+        const bounds = popup.getBoundingClientRect()
+        const options = [...popup.querySelectorAll('[role="option"]')]
+        const selected = options.filter(option => option.getAttribute('aria-selected') === 'true')
+        const style = getComputedStyle(popup)
+        const reference = document.createElement('span')
+        reference.style.backgroundColor = 'var(--color-surface-3)'
+        popup.append(reference)
+        const usesMenuSurface = style.backgroundColor === getComputedStyle(reference).backgroundColor
+        reference.remove()
+        return {
+          usesMenuSurface,
+          visibleShadow: style.boxShadow !== 'none',
+          aligned: Math.abs(bounds.left - trigger.left) < 1 && Math.abs(bounds.right - trigger.right) < 1,
+          inside: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+          rowSizes: options.every(option => option.getBoundingClientRect().height >= 40),
+          selectedCheck: selected.length === 1 && !!selected[0].querySelector('.app-select-menu-check svg'),
+        }
+      })
+      assert.ok(Object.values(menu).every(Boolean), JSON.stringify(menu))
+      for (const type of ['keyDown', 'keyUp']) {
+        await chrome.client.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId)
+      }
+      await page.waitFor(() => !document.querySelector('.app-select-menu')
+        && document.activeElement?.matches('.vd-pair-trigger'))
       const surfaces = await page.probe(() => {
         const color = selector => getComputedStyle(document.querySelector(selector)).backgroundColor
         return { card: color('.vd-hero'), section: color('.vd-panel'), vehicle: color('.vd-armor-preview') }
@@ -249,10 +279,13 @@ try {
       if (theme === 'winter') {
         await page.tapSelector('.vd-pair-trigger', true)
         await page.tapSelector('.app-select-menu [role="option"]:nth-child(2)', true)
-        await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.21.0_1')
+        await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.21.0_1'
+          && !!document.querySelector('.vd-changes') && !document.querySelector('.vd-armor-action'),
+        { label: 'older version pair summary rendered' })
         await page.tapSelector('.vd-pair-trigger', true)
         await page.tapSelector('.app-select-menu [role="option"]:first-child', true)
-        await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.22.0')
+        await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.22.0'
+          && !!document.querySelector('.vd-armor-action'), { label: 'newer version pair summary rendered' })
         await page.tapSelector('.vd-armor-action', true)
         await page.waitFor(() => {
           const query = new URLSearchParams(location.search)

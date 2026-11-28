@@ -9,6 +9,7 @@
   <div id="app"></div>
   <script type="module">
     import { createApp, h, ref } from 'vue'
+    import { createI18n } from 'vue-i18n'
     // 与生产入口保持样式顺序；夹具仅固定触发器位置，不替换菜单定位或尺寸。
     import '../../src/styles/tokens/scale.css'
     import '../../src/styles/tokens/color.css'
@@ -25,9 +26,11 @@
     import '../../src/styles/playback-mobile.css'
     import '../../src/styles/playback-workspace.css'
     import MenuButton from '../../src/components/MenuButton.vue'
+    import BattlePicker from '../../src/components/BattlePicker.vue'
     import { messages } from '../../src/locales/messages.js'
 
     const params = new URLSearchParams(location.search)
+    const battle = params.has('battle')
     const profile = params.get('profile') === 'winter' ? 'winter' : 'summer'
     document.documentElement.dataset.uiProfile = profile
     document.documentElement.dataset.theme = profile === 'winter' ? 'light' : 'dark'
@@ -37,17 +40,20 @@
       { key: 'each', label: text.export_excel_each, testid: 'menu-each' },
       { key: 'png', label: text.export_png, testid: 'menu-png' },
     ]
+    const battles = Array.from({ length: 14 }, (_, index) => ({ value: `r${index}`, label: `Battle ${index + 1}` }))
     createApp({
       setup() {
-        const selected = ref('')
+        const selected = ref(battle ? 'r0' : '')
         return () => [
           // 两边都不足时才暴露“只翻转、不限高”的缺陷；祖先的隔离与裁切不能影响 portal。
           h('div', { style: { position: 'fixed', top: '45%', right: '16px', isolation: 'isolate', overflow: 'hidden' } },
-            h(MenuButton, { label: text.export, items, 'data-testid': 'menu-trigger', onSelect: key => { selected.value = key } })),
+            battle
+              ? h(BattlePicker, { ariaLabel: 'Battle', options: battles, modelValue: selected.value, 'data-testid': 'menu-trigger', 'onUpdate:modelValue': key => { selected.value = key } })
+              : h(MenuButton, { label: text.export, items, 'data-testid': 'menu-trigger', onSelect: key => { selected.value = key } })),
           h('output', { 'data-testid': 'menu-selected' }, selected.value),
         ]
       },
-    }).mount('#app')
+    }).use(createI18n({ legacy: false, locale: 'en', messages })).mount('#app')
   </script>
 </body>
 </html>
