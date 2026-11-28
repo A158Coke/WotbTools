@@ -6,11 +6,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navigateToDataset } from './useDataVersion.js'
 import {
-  datasetAssetUrl, fetchDatasetParamsFormat, fetchDatasetTank, fetchDatasetTankCrops, fetchMapDiff, fetchPairSummary,
+  datasetAssetUrl, fetchDatasetParamsFormat, fetchDatasetTank, fetchDatasetTankCrops, fetchMapDiff, fetchMatchingTopConfig, fetchPairSummary,
   fetchTankDiff, loadVersionDiffCatalog, versionDiffCatalogState,
 } from './useVersionDiff.js'
 import type { DiffPair } from './useVersionDiff.js'
-import { matchingTopConfig, needsTopConfig, onlyPairedConfig } from '../components/version-diff/versionDiffFormat.js'
+import { needsTopConfig, onlyPairedConfig } from '../components/version-diff/versionDiffParameterRows.js'
 import type { DiffChange } from '../components/version-diff/versionDiffFormat.js'
 import type { ArmorDiffDetail } from '../scene/viewer/armorComparisonModel.js'
 
@@ -264,7 +264,7 @@ export function useVersionDiffPage() {
           void loadCrops(next[side].dataset, request)
         }
       }
-      for (const row of statTanks.value) {
+      for (const row of new Set([...statTanks.value, ...armorTanks.value])) {
         if (!row.detail) continue
         void tankDetail(next, row).then(detail => {
           if (request !== loadSummary.seq) return
@@ -272,15 +272,10 @@ export function useVersionDiffPage() {
           const onlyConfig = onlyPairedConfig(detail.configs)
           if (onlyConfig) topConfigs.value[row.id] = onlyConfig
           else if (armorVerification.value === 'verified' && needsTopConfig(detail)) {
-            void loadTopConfig(next, row.id, request)
+            void fetchMatchingTopConfig(next, row.id).then(identity => {
+              if (request === loadSummary.seq && identity) topConfigs.value[row.id] = identity
+            }).catch(() => {})
           }
-        }).catch(() => {})
-      }
-      // 装甲章节的文字版要展示完整 diff（含配置级板件），与对比器共用同一份缓存请求。
-      for (const row of armorTanks.value) {
-        if (!row.detail) continue
-        void tankDetail(next, row).then(detail => {
-          if (request === loadSummary.seq) statDetails.value[row.id] = detail
         }).catch(() => {})
       }
       for (const section of lineup.value) {
@@ -352,19 +347,6 @@ export function useVersionDiffPage() {
       if (request === loadSummary.seq) tankProfiles.value[row.id] = data as TankProfile
     } catch {
       if (request === loadSummary.seq) tankProfiles.value[row.id] = null
-    }
-  }
-
-  async function loadTopConfig(activePair: DiffPair, tankId: number, request: number) {
-    try {
-      const [before, after] = await Promise.all([
-        fetchDatasetTank(activePair.from.dataset, tankId),
-        fetchDatasetTank(activePair.to.dataset, tankId),
-      ]) as [TankProfile | null, TankProfile | null]
-      const identity = matchingTopConfig(before?.configs, after?.configs)
-      if (request === loadSummary.seq && identity) topConfigs.value[tankId] = identity
-    } catch {
-      // Without both exported configurations, keep the summary and configuration rows.
     }
   }
 

@@ -137,6 +137,7 @@ vi.mock('../composables/useVersionDiff.js', async () => {
     fetchPairSummary: mocks.fetchPairSummary,
     fetchTankDiff: mocks.fetchTankDiff,
     fetchMapDiff: mocks.fetchMapDiff,
+    fetchMatchingTopConfig: vi.fn(async () => undefined),
     fetchDatasetParamsFormat: vi.fn(async () => ({ maxHealth: {}, gunShellReloadTime: { biggerIsBetter: false } })),
     fetchDatasetTank: vi.fn(async () => ({
       hp: 2050, speed_forward: 40, speed_reverse: 14,

@@ -67,3 +67,62 @@ function onKey(event: KeyboardEvent) {
     ></button>
   </div>
 </template>
+
+<style scoped>
+.vd-compare-controls { position: absolute; inset: 0; z-index: calc(var(--z-base) + 2); pointer-events: none; }
+
+.vd-compare-divider {
+  position: absolute;
+  left: var(--vd-compare-position);
+  inset-block: 0;
+  inline-size: 2px;
+  margin-inline-start: -1px;
+  background: var(--color-border-strong);
+  pointer-events: none;
+}
+
+.vd-compare-handle {
+  position: absolute;
+  left: clamp(22px, var(--vd-compare-position), calc(100% - 22px));
+  pointer-events: auto;
+  inset-block-start: 50%;
+  translate: -50% -50%;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.vd-compare-grip {
+  position: absolute;
+  left: 50%;
+  inset-block-start: 50%;
+  translate: -50% -50%;
+  inline-size: 16px;
+  block-size: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.vd-version-stop {
+  pointer-events: auto;
+  border: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vd-version-stop:focus-visible,
+.vd-compare-handle:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+</style>

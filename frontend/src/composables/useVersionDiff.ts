@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { assetOrigin, stripDatasetSuffix } from '../scene/assetBase.js'
+import { matchingTopConfig } from '../components/version-diff/versionDiffParameterRows.js'
 
 /**
  * 版本变更页的静态 diff 数据源。
@@ -155,6 +156,15 @@ export function datasetTankModelUrl(datasetId: string, path: unknown) {
 
 export function fetchDatasetTank(datasetId: string, tankId: string | number): Promise<unknown> {
   return fetchJson(datasetAssetUrl(datasetId, '/tank/' + encodeURIComponent(tankId) + '.json'))
+}
+
+export async function fetchMatchingTopConfig(pair: DiffPair, tankId: number) {
+  type Profile = { configs?: Parameters<typeof matchingTopConfig>[0] }
+  const [before, after] = await Promise.all([
+    fetchDatasetTank(pair.from.dataset, tankId),
+    fetchDatasetTank(pair.to.dataset, tankId),
+  ]) as [Profile | null, Profile | null]
+  return matchingTopConfig(before?.configs, after?.configs)
 }
 
 export function fetchTankDiff(pair: DiffPair, tankId: string | number): Promise<unknown> {

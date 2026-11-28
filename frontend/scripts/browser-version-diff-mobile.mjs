@@ -248,10 +248,10 @@ try {
       assert.ok(await page.callWith(unit => [...document.querySelectorAll('#vd-section-tanks .tp-param-unit')].some(el => el.textContent === unit), unit))
       if (theme === 'winter') {
         await page.tapSelector('.vd-pair-trigger', true)
-        await page.tapSelector('.vd-pair-menu [role="option"]:nth-child(2)', true)
+        await page.tapSelector('.app-select-menu [role="option"]:nth-child(2)', true)
         await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.21.0_1')
         await page.tapSelector('.vd-pair-trigger', true)
-        await page.tapSelector('.vd-pair-menu [role="option"]:first-child', true)
+        await page.tapSelector('.app-select-menu [role="option"]:first-child', true)
         await page.waitFor(() => new URLSearchParams(location.search).get('to') === '11.22.0')
         await page.tapSelector('.vd-armor-action', true)
         await page.waitFor(() => {

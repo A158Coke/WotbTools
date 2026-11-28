@@ -49,34 +49,6 @@
 .vd-pair-versions > span { color: var(--color-text-secondary); overflow-wrap: anywhere; }
 .vd-pair-versions strong { color: var(--color-accent-text); overflow-wrap: anywhere; }
 
-.vd-pair-menu {
-  z-index: var(--z-menu);
-  min-inline-size: var(--reka-select-trigger-width);
-  max-inline-size: var(--reka-select-content-available-width);
-  max-block-size: var(--reka-select-content-available-height);
-  padding: var(--space-1);
-  border: var(--border-width) solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-3);
-}
-
-.vd-pair-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-block-size: var(--hit-min-comfortable);
-  padding-inline: var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  cursor: pointer;
-}
-
-.vd-pair-option[data-highlighted] { outline: none; background: var(--color-surface-2); }
-.vd-pair-option[data-state='checked'] { color: var(--color-accent-text); font-weight: 600; }
-
 .vd-select {
   min-height: var(--control-h-md);
   padding: 0 var(--space-3);
@@ -400,50 +372,6 @@
 .vd-armor-canvas canvas { display: block; inline-size: 100%; block-size: 100%; cursor: grab; }
 .vd-armor-canvas canvas:active { cursor: grabbing; }
 
-.vd-compare-controls { position: absolute; inset: 0; z-index: calc(var(--z-base) + 2); pointer-events: none; }
-
-.vd-compare-divider {
-  position: absolute;
-  left: var(--vd-compare-position);
-  inset-block: 0;
-  inline-size: 2px;
-  margin-inline-start: -1px;
-  background: var(--color-border-strong);
-  pointer-events: none;
-}
-
-.vd-compare-handle {
-  position: absolute;
-  left: clamp(22px, var(--vd-compare-position), calc(100% - 22px));
-  pointer-events: auto;
-  inset-block-start: 50%;
-  translate: -50% -50%;
-  inline-size: 44px;
-  block-size: 44px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: ew-resize;
-  touch-action: none;
-}
-
-.vd-compare-grip {
-  position: absolute;
-  left: 50%;
-  inset-block-start: 50%;
-  translate: -50% -50%;
-  inline-size: 16px;
-  block-size: 44px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-full);
-  corner-shape: round;
-  background: var(--color-surface-1);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-}
-
 .vd-armor-thickness {
   position: absolute;
   inset-inline-start: var(--space-2);
@@ -454,19 +382,6 @@
   color: var(--color-text-primary);
   font: var(--type-caption);
   pointer-events: none;
-}
-
-.vd-version-stop {
-  pointer-events: auto;
-  border: 1px solid var(--color-border-subtle);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.vd-version-stop:focus-visible,
-.vd-compare-handle:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
 }
 
 .vd-armor-status {

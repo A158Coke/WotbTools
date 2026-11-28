@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, Check, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-vue-next'
-import { SelectContent, SelectItem, SelectItemIndicator, SelectItemText, SelectPortal, SelectRoot, SelectTrigger, SelectViewport } from 'reka-ui'
+import { ArrowRight, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
+import AppSelectMenu from './AppSelectMenu.vue'
 import VersionDiffReading from './version-diff/VersionDiffReading.vue'
 import VersionDiffVehicle from './version-diff/VersionDiffVehicle.vue'
 import TankDiffDialog from './version-diff/TankDiffDialog.vue'
@@ -163,29 +163,20 @@ function itemFileLabel(name: string): string {
       </div>
       <div v-if="pair" class="vd-pair-picker">
         <span id="vd-pair-label" class="vd-pair-label">{{ t('versionDiff.pair') }}</span>
-        <SelectRoot
+        <AppSelectMenu
+          class="vd-pair-trigger"
+          aria-labelledby="vd-pair-label vd-pair-value"
           :model-value="selectedPairId"
+          :options="[...catalog.pairs].reverse().map(item => ({ value: item.id, label: pairLabel(item) }))"
           @update:model-value="id => selectPair(catalog.pairs.find(item => item.id === id) ?? null)"
         >
-          <SelectTrigger class="vd-pair-trigger" aria-labelledby="vd-pair-label vd-pair-value">
-            <span id="vd-pair-value" class="vd-pair-versions">
-              <span>{{ pair.from.dataset }}</span>
-              <ArrowRight :size="16" aria-hidden="true" />
-              <strong>{{ pair.to.dataset }}</strong>
-            </span>
-            <ChevronDown :size="16" aria-hidden="true" />
-          </SelectTrigger>
-          <SelectPortal>
-            <SelectContent class="vd-pair-menu" position="popper" align="end" :side-offset="6" :collision-padding="12">
-              <SelectViewport>
-                <SelectItem v-for="item in [...catalog.pairs].reverse()" :key="item.id" :value="item.id" class="vd-pair-option">
-                  <SelectItemText>{{ pairLabel(item) }}</SelectItemText>
-                  <SelectItemIndicator><Check :size="16" aria-hidden="true" /></SelectItemIndicator>
-                </SelectItem>
-              </SelectViewport>
-            </SelectContent>
-          </SelectPortal>
-        </SelectRoot>
+          <span id="vd-pair-value" class="vd-pair-versions">
+            <span>{{ pair.from.dataset }}</span>
+            <ArrowRight :size="16" aria-hidden="true" />
+            <strong>{{ pair.to.dataset }}</strong>
+          </span>
+          <ChevronDown :size="16" aria-hidden="true" />
+        </AppSelectMenu>
       </div>
     </header>
 
