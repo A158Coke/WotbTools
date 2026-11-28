@@ -84,12 +84,12 @@ beforeEach(() => {
 })
 
 describe('home version changes', () => {
-  it('promotes the last catalog pair to the only version changes link on the page', async () => {
+  it('links to the mainline endpoint regardless of the catalog array order', async () => {
     const wrapper = mountPage()
     expect(loadVersionDiffCatalog).toHaveBeenCalledTimes(1)
     versionDiffCatalogState.value = {
       status: 'ready',
-      pairs: [comparison('11.21.0', '11.21.0_1'), comparison('11.21.0_1', '11.22.0')],
+      pairs: [comparison('11.21.0_1', '11.22.0'), comparison('11.21.0', '11.21.0_1')],
     }
     await flushPromises()
     const update = wrapper.get('.home-update')
@@ -100,6 +100,19 @@ describe('home version changes', () => {
       view: 'agent-version-diff', data: '11.22.0', from: '11.21.0_1', to: '11.22.0',
     })
     expect(wrapper.findAll('a[href*="view=agent-version-diff"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('keeps the version viewer reachable when the catalog has two endpoints', () => {
+    versionDiffCatalogState.value = {
+      status: 'ready',
+      pairs: [comparison('11.21.0_1', '11.22.0'), comparison('11.21.0_1', '11.22.1')],
+    }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="home-update-versions"]').exists()).toBe(false)
+    expect(Object.fromEntries(queryOf(wrapper.get('[data-testid="home-version-diff"]')))).toEqual({
+      view: 'agent-version-diff', data: '11.22.0',
+    })
     wrapper.unmount()
   })
 

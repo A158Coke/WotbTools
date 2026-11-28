@@ -33,9 +33,14 @@ const recordTotalDisplay = computed(() => {
   return Number.isFinite(total) ? formatCount(total) : '--'
 })
 
-const latestPair = computed(() => versionDiffCatalogState.value.status === 'ready'
-  ? versionDiffCatalogState.value.pairs.at(-1)
-  : undefined)
+const latestPair = computed(() => {
+  const { status, pairs } = versionDiffCatalogState.value
+  if (status !== 'ready') return undefined
+  // The upstream catalog contains adjacent comparisons from an explicit mainline.
+  const predecessors = new Set(pairs.map(pair => pair.from.dataset))
+  const terminalPairs = pairs.filter(pair => !predecessors.has(pair.to.dataset))
+  return terminalPairs.length === 1 ? terminalPairs[0] : undefined
+})
 const versionDiffTarget = computed(() => {
   const target = locationForView('agent-version-diff', route)
   return {

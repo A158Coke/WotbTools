@@ -71,6 +71,34 @@ async function hover(page, selector) {
   await page.evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
 }
 
+async function coverScrollProbe() {
+  const stage = document.querySelector('.home-stage')
+  const root = document.scrollingElement
+  const originalScroll = root.scrollTop
+  const spacer = document.createElement('div')
+  spacer.style.height = '100vh'
+  document.body.append(spacer)
+  const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  try {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    await frame()
+    const before = getComputedStyle(stage, '::before').transform
+    window.scrollTo({ top: root.scrollHeight, behavior: 'instant' })
+    await frame()
+    const cover = getComputedStyle(stage, '::before')
+    return {
+      supportsTimeline: CSS.supports('animation-timeline: scroll()'),
+      scrolled: root.scrollTop > 0,
+      animation: cover.animationName,
+      before,
+      after: cover.transform,
+    }
+  } finally {
+    spacer.remove()
+    window.scrollTo({ top: originalScroll, behavior: 'instant' })
+  }
+}
+
 async function runReducedMotion(env) {
   const failures = []
   const { page, targetId } = await openHome(env, 'reduce')
@@ -83,6 +111,9 @@ async function runReducedMotion(env) {
     check(failures, !hasTransition(before.updateArrow), 'reduce: version arrow must have no transition')
     check(failures, !hasTransition(before.ctaArrow), 'reduce: download arrow must have no transition')
     check(failures, before.line?.animationName === 'none', 'reduce: hero entrance must be disabled')
+    const cover = await page.probe(coverScrollProbe)
+    check(failures, cover.scrolled, 'reduce: test must scroll the document')
+    check(failures, cover.animation === 'none' && cover.before === 'none' && cover.after === 'none', 'reduce: cover must stay fixed relative to the home stage as the document scrolls')
 
     await hover(page, '.home-update-link')
     const afterUpdate = await page.probe(homeMotionProbe)
@@ -107,9 +138,12 @@ async function runMotionEnabled(env) {
     check(failures, before.viewport.width >= 1200, `desktop viewport required for hover regression (got width ${before.viewport.width})`)
     check(failures, before.media.hover === true && before.media.fine === true, `desktop hover/fine pointer capability missing (hover=${before.media.hover}, fine=${before.media.fine})`)
     check(failures, before.line?.animationName?.startsWith('home-rise'), 'hero entrance should remain enabled')
-    const cover = await page.probe(fullPageCoverProbe)
-    check(failures, cover.coverBehindVersion && cover.reachesFooter, 'desktop cover should span the content through the version card')
-    check(failures, cover.statsExposeCover, 'desktop statistics should leave the cover visible')
+    await checkSeasonalCovers(page, failures, 'wide')
+    const cover = await page.probe(coverScrollProbe)
+    if (cover.supportsTimeline) {
+      check(failures, cover.scrolled && cover.animation.startsWith('home-parallax') && cover.before !== cover.after,
+        `no-preference: the desktop cover should move when the document scrolls (got ${JSON.stringify(cover)})`)
+    }
     check(failures, hasTransition(before.updateArrow), 'no-preference: version arrow must keep its hover transition')
 
     await hover(page, '.home-update-link')
@@ -272,7 +306,8 @@ async function runGlassAccessibility(env) {
 }
 
 
-function fullPageCoverProbe() {
+function fullPageCoverProbe(theme, orientation) {
+  document.documentElement.dataset.uiProfile = theme
   const stage = document.querySelector('.home-stage')
   const version = stage.querySelector('.home-update')
   const footer = document.querySelector('.app-footer')
@@ -281,10 +316,21 @@ function fullPageCoverProbe() {
   const stats = getComputedStyle(stage.querySelector('.home-stats'))
   return {
     statsExposeCover: stats.backgroundColor === 'rgba(0, 0, 0, 0)' && stats.backdropFilter === 'none',
-    coverBehindVersion: cover.backgroundImage.includes('url(') && cover.backgroundSize.includes('cover') &&
-      Math.abs(parseFloat(cover.height) - stageRect.height) <= 1 && version.getBoundingClientRect().bottom <= stageRect.bottom,
+    correctImage: cover.backgroundImage.includes(`theme-${theme}-${orientation}`),
+    coverBehindVersion: cover.backgroundSize.includes('cover') &&
+      Math.abs(parseFloat(cover.width) - stageRect.width) <= 1 && Math.abs(parseFloat(cover.height) - stageRect.height) <= 1 &&
+      version.getBoundingClientRect().bottom <= stageRect.bottom,
     reachesFooter: Math.abs(stageRect.bottom - footer.getBoundingClientRect().top) <= 1 &&
       footer.getBoundingClientRect().bottom >= innerHeight - 1,
+  }
+}
+
+async function checkSeasonalCovers(page, failures, orientation) {
+  for (const theme of THEMES) {
+    const cover = await page.callWith(fullPageCoverProbe, theme, orientation)
+    check(failures, cover.correctImage, `${theme} should use the ${orientation} cover image`)
+    check(failures, cover.coverBehindVersion && cover.reachesFooter, `${theme} ${orientation} cover should span the content through the version card`)
+    check(failures, cover.statsExposeCover, `${theme} ${orientation} statistics should leave the cover visible`)
   }
 }
 
@@ -295,9 +341,7 @@ async function runMobileNavigation(env) {
     await page.emulate({ width: 390, height: 844 })
     await page.waitForValue(`document.querySelector('[data-testid=home-update-versions]')?.textContent.trim()`,
       value => value === '11.21.0_1 → 11.22.0', { label: 'latest comparison shown' })
-    const cover = await page.probe(fullPageCoverProbe)
-    check(failures, cover.coverBehindVersion && cover.reachesFooter, 'mobile cover should span the content through the version card')
-    check(failures, cover.statsExposeCover, 'mobile statistics should leave the cover visible')
+    await checkSeasonalCovers(page, failures, 'portrait')
     const layout = await page.probe(() => {
       return {
         brandVisible: document.querySelector('.home-hero-line')?.textContent.includes('WotbTools'),
@@ -338,7 +382,7 @@ const middleware = (request, response, next) => {
   }
   if (request.method !== 'GET' || path !== '/diffs/index.json') { next(); return }
   response.setHeader('Content-Type', 'application/json')
-  response.end(JSON.stringify({ schema: 1, pairs: [comparison('11.21.0', '11.21.0_1'), comparison('11.21.0_1', '11.22.0')] }))
+  response.end(JSON.stringify({ schema: 1, pairs: [comparison('11.21.0_1', '11.22.0'), comparison('11.21.0', '11.21.0_1')] }))
 }
 const { server, origin } = await startFixtureServer({ middleware })
 let chromeCdp = null

@@ -26,6 +26,9 @@
     --home-hero-title-size-compact: 2.125rem;
     --home-enter-duration: 700ms;
     --home-rise-travel: 18px;
+    --home-parallax-range: 640px;
+    --home-parallax-scale: 1.08;
+    --home-parallax-shift: 3%;
 
     --layout-content-max: 1420px;
     --layout-wide-max: 1720px;
