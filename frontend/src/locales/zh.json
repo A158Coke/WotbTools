@@ -493,6 +493,7 @@
       "unavailable": "待审数量暂不可用，请刷新重试。"
     },
     "reviewQueue": "审核队列",
+    "proofLoadError": "证据图 {number} 加载失败",
     "reviewDetail": "审核详情",
     "reviewBack": "返回队列",
     "reviewPrev": "上一条",

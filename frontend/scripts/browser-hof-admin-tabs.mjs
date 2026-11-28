@@ -5,6 +5,7 @@ import { createHofAdminFixture } from './browser-fixtures/hof-admin-fixture.mjs'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { setTimeout as pollDelay } from 'node:timers/promises'
+import { runReviewDetail } from './browser-hof-review-detail.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
@@ -288,6 +289,16 @@ try {
     ['summer', 1280, 850, true], ['winter', 390, 664, true], ['spring', 900, 850, false], ['autumn', 360, 740, false],
     ['winter', 1280, 850, true], ['summer', 390, 664, true],
   ]) scenarios.push([`hof-admin-vehicles-${theme}-${width}`, env => runVehiclesAndReviews(env, { width, height, theme, review })])
+  for (const [width, height, locale, theme, reduced] of [
+    [1600, 900, 'zh', 'summer', false], [1280, 720, 'ru', 'winter', true],
+    [1200, 600, 'zh', 'winter', false], [1199, 800, 'ru', 'summer', true],
+    [900, 740, 'zh', 'winter', false], [390, 844, 'zh', 'summer', false],
+    [360, 640, 'ru', 'winter', true], [844, 390, 'ru', 'summer', false],
+  ]) {
+    for (const domain of ['hundred', 'mark3']) {
+      scenarios.push([`hof-review-detail-${width}-${domain}`, env => runReviewDetail(env, fixture, { width, height, locale, theme, reduced, domain })])
+    }
+  }
   const args = parseScenarioArgs(process.argv.slice(2))
   const selected = scenarios.filter(([name]) => !args.nameFilter || name.includes(args.nameFilter))
   for (const [name, run] of selectShard(selected, args)) {

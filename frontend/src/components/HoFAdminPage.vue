@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
+import { useElementSize } from '@vueuse/core'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
@@ -17,6 +18,9 @@ const { initPromise, isAuthenticated, tokenParsed, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const { isDrawerShell } = useBreakpoint()
 const hofAvailability = computed(() => availability(Feature.HALL_OF_FAME))
+
+const tabs = ref<HTMLElement | null>(null)
+const { height: tabsHeight } = useElementSize(tabs, { width: 0, height: 0 }, { box: 'border-box' })
 
 const canAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
@@ -78,7 +82,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </script>
 
 <template>
-  <div class="hof-admin" :class="{ 'uses-drawer': isDrawerShell }">
+  <div class="hof-admin" :style="{ '--hof-tabs-height': tabsHeight + 'px' }" :class="{ 'uses-drawer': isDrawerShell }">
     <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-admin-connectivity"><p>{{ $t(hofAvailability.messageKey ?? '') }}</p></Banner>
     <div v-if="authPhase === 'login'" class="hof-admin-login muted">{{ $t('hofAdmin.login') }}</div>
 
@@ -95,7 +99,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
           {{ $t('hofAdmin.pendingCount.refresh') }}
         </AppButton>
       </div>
-      <div class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
+      <div ref="tabs" class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
         <button
           v-for="tab in ADMIN_TABS"
           :key="tab.key"
@@ -118,14 +122,14 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </template>
 
 <style scoped>
-.hof-admin { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
+.hof-admin { --hof-tabs-top: calc(var(--header-h) + var(--space-2)); padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
 
 .hof-pending-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-block-end: var(--space-3); }
 .hof-pending-summary p { min-width: 0; margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 .hof-admin-tabs {
   position: sticky;
-  top: calc(var(--header-h) + var(--space-2));
+  top: var(--hof-tabs-top);
   z-index: var(--z-sticky);
   display: flex;
   gap: var(--space-1);

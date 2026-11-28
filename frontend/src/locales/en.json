@@ -493,6 +493,7 @@
       "unavailable": "Pending counts are unavailable. Refresh to try again."
     },
     "reviewQueue": "Review queue",
+    "proofLoadError": "Evidence image {number} could not be loaded",
     "reviewDetail": "Review details",
     "reviewBack": "Back to queue",
     "reviewPrev": "Previous",
