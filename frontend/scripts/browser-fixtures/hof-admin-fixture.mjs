@@ -1,12 +1,19 @@
+import { readFileSync } from 'node:fs'
+
 const at = '2026-01-01T00:00:00Z'
 const options = Array.from({ length: 12 }, (_, index) => ({
   tankId: 1000 + index, tankName: `Fixture Tank ${index + 1}`, nation: 'UK', type: 'MEDIUM_TANK', tier: 10,
 }))
 
-const proof = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aB0AAAAASUVORK5CYII='
+function photo(name) {
+  const file = new URL('../../src/assets/theme/' + name, import.meta.url)
+  return 'data:image/webp;base64,' + readFileSync(file).toString('base64')
+}
+const landscape = photo('hero-hof.webp')
+const portrait = photo('theme-summer-portrait.webp')
 const page = items => ({ items, page: 1, size: 50, totalItems: items.length, totalPages: items.length ? 1 : 0 })
 const listRow = (id, mark3) => ({
-  id, status: 'PENDING', vehicleId: 385, vehicleName: 'Progetto 65', nicknameSnapshot: `Pilot ${id}`,
+  id, status: 'PENDING', vehicleId: 385, vehicleName: 'Progetto 65 · Carro da combattimento pesante', nicknameSnapshot: `Pilot_${id}_百场与三环审核_LongUnbrokenPlayerNickname`,
   wotbServer: 'EU', wotbAccountId: 2000 + id, approvedAverageDamage: null, approvedBattleCount: null,
   submittedAt: at, approvedAt: null, deleteReason: null, rejectReason: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
@@ -81,7 +88,10 @@ export function createHofAdminFixture() {
       return
     }
 
-    const route = /^\/api\/admin\/hof\/(hundred|mark3)\/submissions(?:\/(\d+)(?:\/(replays|approve))?)?$/.exec(pathname)
+    if (method === 'GET' && /^\/api\/admin\/hof\/(hundred|mark3)\/submissions\/\d+\/replays\/\d+$/.test(pathname)) {
+      return response.writeHead(200, { 'Content-Type': 'application/octet-stream' }).end('fixture replay')
+    }
+    const route = /^\/api\/admin\/hof\/(hundred|mark3)\/submissions(?:\/(\d+)(?:\/(replays|approve|reject))?)?$/.exec(pathname)
     if (!route) return json({ error: pathname }, 404)
     const [, domain, id, action] = route
     const rows = queues.get(domain)
@@ -104,18 +114,20 @@ export function createHofAdminFixture() {
     if (!row) return json({ error: id }, 404)
     const claimed = { claimedAverageDamage: 4100, claimedBattleCount: 100 }
     if (!action && method === 'GET') {
+      const proofs = row.id % 10 === 3 ? [] : row.id % 10 === 4 ? ['data:image/png;base64,AA==']
+        : domain === 'mark3' ? [landscape, portrait] : [landscape]
       return json({ ...row, ...claimed, approvedBy: null, rejectedAt: null, rejectedBy: null, rejectReasonText: null,
         cancelledAt: null, deletedAt: null, deletedBy: null, deleteReasonText: null,
-        ...(domain === 'mark3' ? { proofScreenshots: [proof, proof] } : { proofScreenshot: proof }) })
+        ...(domain === 'mark3' ? { proofScreenshots: proofs } : { proofScreenshot: proofs[0] ?? null }) })
     }
     if (action === 'replays' && method === 'GET') {
       return json(Array.from({ length: row.id % 10 === 3 ? 4 : 5 }, (_, index) => ({
-        id: 500 + index, slot: index + 1, originalFilename: `game-${index}.wotbreplay`, fileSize: 32,
+        id: 500 + index, slot: index + 1, originalFilename: `20261127_235959_Progetto_65_LongUnbrokenPlayerNickname_europe_desert_training_0123456789abcdef_battle_${index}.wotbreplay`, fileSize: 384032,
         arenaId: String(index), sha256: 'a'.repeat(64), createdAt: at,
       })))
     }
-    if (action === 'approve' && method === 'POST' && row.status === 'PENDING') {
-      row.status = 'CURRENT'
+    if ((action === 'approve' || action === 'reject') && method === 'POST' && row.status === 'PENDING') {
+      row.status = action === 'approve' ? 'CURRENT' : 'REJECTED'
       return json({ id: row.id, vehicleId: row.vehicleId, vehicleName: row.vehicleName, status: row.status,
         ...claimed, approvedBattleCount: claimed.claimedBattleCount, approvedAverageDamage: claimed.claimedAverageDamage,
         submittedAt: at, approvedAt: at, rejectReason: null, rejectReasonText: null,

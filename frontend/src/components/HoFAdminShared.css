@@ -192,7 +192,12 @@
 .screenshot-zoom-img { display: block; max-width: 100%; max-height: 70dvh; margin: 0 auto; border-radius: var(--radius-md); }
 
 .hof-review-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.hof-review-layout > :deep(.hof-review-pane) { position: sticky; top: calc(var(--header-h) + var(--space-12)); max-block-size: calc(100dvh - var(--header-h) - var(--space-12) - var(--space-4)); }
+.hof-review-layout > :deep(.hof-review-pane) {
+  --review-top: calc(var(--hof-tabs-top) + var(--hof-tabs-height) + var(--space-2));
+  position: sticky;
+  top: var(--review-top);
+  max-block-size: calc(100dvh - var(--review-top) - var(--space-4));
+}
 .hof-review-empty { display: grid; place-items: center; min-block-size: calc(var(--form-field-min) * 1.5); margin: 0; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-tertiary); }
 @media (width < 1200px) { .hof-review-layout { grid-template-columns: minmax(0, 1fr); } .hof-review-empty { display: none; } }
 @media (width < 768px) { .hof-admin-filters { grid-template-columns: minmax(0, 1fr); } }
