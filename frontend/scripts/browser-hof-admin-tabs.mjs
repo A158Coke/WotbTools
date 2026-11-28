@@ -6,6 +6,7 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { setTimeout as pollDelay } from 'node:timers/promises'
 import { runReviewDetail } from './browser-hof-review-detail.mjs'
+import { assertStickyPositions } from './browser-hof-sticky.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
@@ -58,22 +59,8 @@ async function runSticky(env) {
     check(failures, Math.abs(px(state.top) - expectedTop) <= 0.5, `tabs top must equal --header-h + --space-2 = ${expectedTop}px (got ${state.top}, --header-h=${state.headerH})`)
     check(failures, state.zIndex === String(parseInt(state.zSticky, 10)), `tabs z-index must equal --z-sticky=${state.zSticky} (got ${state.zIndex})`)
 
-    const geometry = await page.probe(() => {
-      const bar = document.querySelector('.hof-admin-tabs')
-      const root = document.scrollingElement
-      return { naturalTop: bar.getBoundingClientRect().top + root.scrollTop,
-        maxScroll: root.scrollHeight - root.clientHeight, parentBottom: bar.parentElement.getBoundingClientRect().bottom + root.scrollTop,
-        height: bar.getBoundingClientRect().height }
-    })
-    const threshold = geometry.naturalTop - expectedTop
-    const target = Math.ceil(threshold + geometry.height)
-    assert.ok(threshold > 0 && target < geometry.maxScroll && target + expectedTop + geometry.height < geometry.parentBottom,
-      'fixture must reach beyond the sticky threshold and stay inside the container: ' + JSON.stringify(geometry))
-    await page.callWith(y => window.scrollTo({ top: y, behavior: 'instant' }), target)
-    await page.waitForValue('document.scrollingElement.scrollTop', y => Math.abs(y - target) <= 1)
-    const stuckTop = await page.evaluate('document.querySelector(".hof-admin-tabs").getBoundingClientRect().top')
-    check(failures, Math.abs(stuckTop - expectedTop) <= 1, 'sticky top ' + stuckTop + ', expected ' + expectedTop + ', threshold ' + threshold + ', scroll ' + target)
-    console.log('[browser-hof-admin-tabs] sticky geometry', { threshold, target, stuckTop, expectedTop })
+    const sticky = await assertStickyPositions(page, ['.hof-admin-tabs'])
+    console.log('[browser-hof-admin-tabs] sticky geometry', sticky)
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }

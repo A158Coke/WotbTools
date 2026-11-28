@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
+import { assertStickyPositions } from './browser-hof-sticky.mjs'
 import { Page } from './browser-page.mjs'
 
 const lastReplay = '.replay-evidence-item:last-child'
@@ -12,9 +13,9 @@ function geometry() {
   const evidence = q('.hof-review-evidence').getBoundingClientRect()
   const facts = q('.hof-review-facts').getBoundingClientRect()
   const panel = q('.hof-review-pane')
+  const overlay = panel.classList.contains('is-overlay')
   const tabs = q('.hof-admin-tabs').getBoundingClientRect()
   const problems = []
-  if (!panel.classList.contains('is-overlay') && panel.getBoundingClientRect().top < tabs.bottom - 1) problems.push('tabs overlap detail')
   if (document.documentElement.scrollWidth > innerWidth + 1) problems.push('page overflows')
   for (const [selector, bounds] of [['.hof-review-evidence *', evidence], ['.hof-review-facts *', facts]]) {
     for (const el of document.querySelectorAll(selector)) {
@@ -25,7 +26,7 @@ function geometry() {
   for (const name of document.querySelectorAll('.replay-name')) {
     if (name.scrollWidth > name.clientWidth + 1) problems.push('filename clipped')
   }
-  return { problems: [...new Set(problems)], gap: Math.round(panel.getBoundingClientRect().top - tabs.bottom),
+  return { problems: [...new Set(problems)], overlay, gap: overlay ? null : panel.getBoundingClientRect().top - tabs.bottom,
     columns: Math.abs(evidence.top - facts.top) < 2 ? 2 : 1, paneWidth: Math.round(panel.getBoundingClientRect().width) }
 }
 
@@ -83,9 +84,14 @@ export async function runReviewDetail({ chrome, origin }, fixture, scenario) {
     await page.evaluate("Promise.all([...document.querySelectorAll('.hundred-proof')].map(img => img.decode()))")
     await page.evaluate('document.fonts.ready')
     await page.animationsSettled()
-    if (!touch) await page.evaluate("scrollBy({ top: document.querySelector('.hof-review-layout').getBoundingClientRect().top + 120, behavior: 'instant' })")
-    await page.evaluate('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+    const sticky = touch ? null : await assertStickyPositions(page, ['.hof-admin-tabs', '.hof-review-pane'])
     const layout = await page.probe(geometry)
+    assert.equal(layout.overlay, touch, 'detail presentation at ' + width)
+    if (sticky) {
+      console.log('[hof-review] sticky', domain, width, JSON.stringify({ ...sticky, gap: layout.gap }))
+      assert.ok(Math.abs(layout.gap - 8) <= 1, 'expected 8px between pinned tabs and detail, got ' + layout.gap)
+      assert.equal(layout.columns, width === 1600 ? 2 : 1, 'detail columns at ' + width)
+    }
     failures.push(...layout.problems)
     const photos = await page.probe(() => [...document.querySelectorAll('.hundred-proof')].map(img => [img.naturalWidth, img.naturalHeight]))
     assert.equal(photos.length, domain === 'hundred' ? 1 : 2)
