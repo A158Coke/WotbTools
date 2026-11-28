@@ -479,7 +479,22 @@
     "heroTotal": "收录记录"
   },
   "hofAdmin": {
+    "pendingCount": {
+      "navKnown": "{name}，百场与三环共 {total} 项待审",
+      "navUnknown": "{name}，百场与三环待审数量未知",
+      "loading": "正在查询百场与三环的待审数量。",
+      "updating": "正在更新百场与三环的待审数量。",
+      "totals": "待审共 {total} 项，百场 {hundred} 项、三环 {mark3} 项。上次查询于 {time}。",
+      "empty": "暂无待审，百场 {hundred} 项、三环 {mark3} 项。上次查询于 {time}。",
+      "refresh": "刷新待审数",
+      "offline": "当前离线，待审数量暂不可用。",
+      "unauthorized": "请重新认证后刷新待审数。",
+      "forbidden": "当前没有读取待审数量的权限。",
+      "timeout": "查询超时，待审数量暂不可用。",
+      "unavailable": "待审数量暂不可用，请刷新重试。"
+    },
     "reviewQueue": "审核队列",
+    "proofLoadError": "证据图 {number} 加载失败",
     "reviewDetail": "审核详情",
     "reviewBack": "返回队列",
     "reviewPrev": "上一条",

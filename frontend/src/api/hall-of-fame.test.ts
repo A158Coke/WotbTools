@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../utils/http.js'
 
 const auth = vi.hoisted(() => ({
+  initialized: { value: true }, authInitState: { value: 'authenticated' }, authenticated: { value: true },
+  isHofAdmin: { value: true }, authEpoch: () => 1, tokenParsed: { value: { sub: 'hof-reviewer' } },
   token: vi.fn(() => 'test-token'),
   ensureToken: vi.fn(async () => true),
   login: vi.fn(),
@@ -105,6 +107,12 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
 
   beforeEach(() => {
     connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
+    auth.initialized.value = true
+    auth.authInitState.value = 'authenticated'
+    auth.authenticated.value = true
+    auth.isHofAdmin.value = true
+    auth.tokenParsed.value.sub = 'hof-reviewer'
     vi.stubGlobal('fetch', vi.fn())
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     localParse.parseAgentResultFromBytes.mockClear()
@@ -116,6 +124,58 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  describe('后台待审摘要', () => {
+    const signal = () => new AbortController().signal
+    it.each(['not initialized', 'auth failed', 'logged out', 'no subject', 'no role', 'offline', 'pending connectivity'])('后台在 %s 时不尝试 token 或 GET', async reason => {
+      if (reason === 'not initialized') auth.initialized.value = false
+      if (reason === 'auth failed') auth.authInitState.value = 'failed'
+      if (reason === 'logged out') auth.authenticated.value = false
+      if (reason === 'no subject') auth.tokenParsed.value.sub = ''
+      if (reason === 'no role') auth.isHofAdmin.value = false
+      if (reason === 'offline') connectivityState.state.value = 'offline'
+      if (reason === 'pending connectivity') connectivityState.settled.value = false
+      await expect(hof.getHofPendingTotals(signal())).rejects.toBeInstanceOf(ApiError)
+      expect(auth.ensureToken).not.toHaveBeenCalled()
+      expect(fetch).not.toHaveBeenCalled()
+      expect(auth.login).not.toHaveBeenCalled()
+    })
+    it('只刷新一次 token；两个列表保留校验、信号与独立 totalItems', async () => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(jsonResponse(200, { page: 1, size: 1, totalItems: 7, totalPages: 7, items: [{ id: 17, status: 'PENDING', vehicleId: 385, vehicleName: 'Tank', wotbServer: 'EU', wotbAccountId: 2, nicknameSnapshot: 'A' }] }))
+        .mockResolvedValueOnce(jsonResponse(200, { page: 1, size: 1, totalItems: 5, totalPages: 5, items: [{ ...producer('Mark3AdminPage').items[0], status: 'PENDING' }] }))
+      const requestSignal = signal()
+      await expect(hof.getHofPendingTotals(requestSignal)).resolves.toEqual({ hundred: 7, mark3: 5 })
+      expect(auth.ensureToken).toHaveBeenCalledTimes(1)
+      for (const type of ['hundred', 'mark3']) {
+        expect(fetch).toHaveBeenCalledWith('/api/admin/hof/' + type + '/submissions?status=PENDING&page=1&size=1',
+          { signal: requestSignal, headers: { Authorization: 'Bearer test-token' } })
+      }
+    })
+    it.each(['token', 'empty bearer', 'principal change', 'role lost', 'aborted', 'pending connectivity'])('在派发前阻止 %s', async reason => {
+      const controller = new AbortController()
+      auth.ensureToken.mockImplementationOnce(async () => {
+        if (reason === 'empty bearer') auth.token.mockReturnValueOnce('')
+        if (reason === 'principal change') auth.tokenParsed.value.sub = 'other'
+        if (reason === 'role lost') auth.isHofAdmin.value = false
+        if (reason === 'aborted') controller.abort()
+        if (reason === 'pending connectivity') connectivityState.settled.value = false
+        return reason !== 'token'
+      })
+      await expect(hof.getHofPendingTotals(controller.signal)).rejects.toBeInstanceOf(ApiError)
+      expect(fetch).not.toHaveBeenCalled()
+      expect(auth.login).not.toHaveBeenCalled()
+    })
+    it.each([401, 403])('后台 %s 优先于同批普通失败，不触发登录', async status => {
+      vi.mocked(fetch).mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(jsonResponse(status, {}))
+      await expect(hof.getHofPendingTotals(signal())).rejects.toMatchObject({ status })
+      expect(auth.login).not.toHaveBeenCalled()
+    })
+    it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])('拒绝无效总数 %s，不公布单边结果', async totalItems => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ...page, totalItems })).mockResolvedValueOnce(jsonResponse(200, page))
+      await expect(hof.getHofPendingTotals(signal())).rejects.toMatchObject({ errorCode: 'INVALID_RESPONSE' })
+    })
   })
 
   const requests: [keyof typeof hof, unknown[], string, string, unknown?][] = [
@@ -288,7 +348,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
 
   it('keeps the export surface covered', () => {
     expect(Object.keys(hof).sort()).toEqual([
-      ...requests.map(([name]) => name), 'hofList', 'hofUpload', 'hofHundredSubmit', 'hofMark3Submit',
+      ...requests.map(([name]) => name), 'getHofPendingTotals', 'hofList', 'hofUpload', 'hofHundredSubmit', 'hofMark3Submit',
       'hofDownload', 'hofAdminDownload', 'hofAdminHundredReplayDownload', 'hofAdminMark3ReplayDownload',
     ].sort())
   })

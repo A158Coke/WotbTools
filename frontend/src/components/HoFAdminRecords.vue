@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, toRefs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '../api/generated/http-contract.js'
 import { Check, Download, Trash2 } from 'lucide-vue-next'
@@ -9,8 +9,12 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, formatDateTimeMinute as fmtTime, replayValueLabel } from '../utils/display.js'
 import * as api from '../api/hall-of-fame.js'
 import AppDialog from './AppDialog.vue'
+import AdminFilterBar from './AdminFilterBar.vue'
+import { compactChips } from './hofBoardShared.js'
+import VehiclePicker from './VehiclePicker.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import HoFAdminBulkDeleteDialog from './HoFAdminBulkDeleteDialog.vue'
-import { battleTypeLabel, createSelection, eventChecked, uniqueValues } from './HoFAdminSelection.js'
+import { battleTypeLabel, createFilterState, createSelection, PAGE_SIZES, eventChecked, uniqueValues } from './HoFAdminSelection.js'
 
 type HofAdminRecord = components['schemas']['HofAdminRecord']
 type VehicleOption = components['schemas']['HofVehicleOption']
@@ -30,18 +34,14 @@ const error = ref('')
 const page = ref(1)
 const totalPages = ref(0)
 const totalItems = ref(0)
-const fNickname = ref('')
-const fAccountId = ref('')
-const fUploadedBy = ref('')
-const fBattleType = ref('')
-const fTankId = ref('')
-const fReplayAvailable = ref('')
-const fSort = ref('')
 const vehicleOptions = ref<VehicleOption[]>([])
 const vehicleOptionsLoading = ref(false)
-const fNation = ref('')
-const fTankType = ref('')
-const fTankTier = ref('')
+const { draft, applied, without } = createFilterState({
+  nickname: '', accountId: '', uploadedBy: '', battleType: '', tankId: null as number | null,
+  replayAvailable: '', sort: '', nation: '', vehicleType: '', tier: '',
+})
+const { nickname: fNickname, accountId: fAccountId, uploadedBy: fUploadedBy, battleType: fBattleType,
+  tankId: fTankId, replayAvailable: fReplayAvailable, sort: fSort, nation: fNation, vehicleType: fTankType, tier: fTankTier } = toRefs(draft)
 let gen = 0
 
 const vehicleNations = computed(() => uniqueValues(vehicleOptions.value.map(v => v.nation)))
@@ -56,6 +56,8 @@ const filteredVehicles = computed(() => vehicleOptions.value
     && (!fTankTier.value || String(v.tier) === fTankTier.value))
   .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
 
+const pickerOptions = computed(() => filteredVehicles.value.map(vehicle => ({ id: vehicle.tankId, label: vehicleLabel(vehicle) })))
+
 const selection = createSelection(rows)
 const bulkOpen = ref(false)
 
@@ -63,28 +65,46 @@ const deleteTarget = ref<HofAdminRecord | null>(null)
 const deleting = ref(false)
 const deleteMsg = ref('')
 
-async function loadRecords() {
+const filterChips = computed(() => {
+  const f = applied.value
+  const vehicle = vehicleOptions.value.find(option => option.tankId === f.tankId)
+  return compactChips([
+    f.nickname.trim() && { key: 'nickname', label: f.nickname.trim() },
+    f.accountId.trim() && { key: 'accountId', label: f.accountId.trim() },
+    f.uploadedBy.trim() && { key: 'uploadedBy', label: f.uploadedBy.trim() },
+    f.battleType && { key: 'battleType', label: battleTypeLabel(t, f.battleType) },
+    f.tankId != null && { key: 'tankId', label: vehicle ? vehicleLabel(vehicle) : String(f.tankId) },
+    f.nation && { key: 'nation', label: replayValueLabel(t, te, f.nation) },
+    f.vehicleType && { key: 'vehicleType', label: replayValueLabel(t, te, f.vehicleType) },
+    f.tier && { key: 'tier', label: 'T' + f.tier },
+    f.replayAvailable && { key: 'replayAvailable', label: t(f.replayAvailable === 'true' ? 'hofAdmin.replayAvailable' : 'hofAdmin.replayMissing') },
+    f.sort && { key: 'sort', label: t(f.sort === 'battle_time' ? 'hofAdmin.sortBattleTime' : 'hofAdmin.sortUploadTime') },
+  ])
+})
+
+function removeChip(key: string) {
+  if (loading.value) return
+  const next = without(key)
+  if (!next) return
+  page.value = 1
+  void loadRecords(next)
+}
+
+async function loadRecords(filters = { ...draft }) {
   if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++gen
   loading.value = true
   error.value = ''
   try {
     const params = {
-      page: page.value,
-      size: props.size,
-      nickname: fNickname.value.trim(),
-      accountId: fAccountId.value.trim(),
-      uploadedBy: fUploadedBy.value.trim(),
-      battleType: fBattleType.value,
-      tankId: fTankId.value.trim(),
-      nation: fNation.value,
-      vehicleType: fTankType.value,
-      tier: fTankTier.value,
-      replayAvailable: fReplayAvailable.value === '' ? '' : fReplayAvailable.value === 'true',
-      sort: fSort.value,
+      ...filters, page: page.value, size: props.size, nickname: filters.nickname.trim(),
+      accountId: filters.accountId.trim(), uploadedBy: filters.uploadedBy.trim(),
+      tankId: filters.tankId == null ? '' : String(filters.tankId),
+      replayAvailable: filters.replayAvailable === '' ? '' : filters.replayAvailable === 'true',
     }
     const res = await api.hofAdminList(params)
     if (g !== gen) return
+    applied.value = filters
     rows.value = res.items || []
     totalPages.value = res.totalPages || 0
     totalItems.value = res.totalItems || 0
@@ -115,12 +135,7 @@ watch(() => props.ready, (ready) => {
 }, { immediate: true })
 
 function onVehicleConditionChange() {
-  if (fTankId.value) {
-    const selectedTankId = Number(fTankId.value)
-    if (!filteredVehicles.value.some(vehicle => vehicle.tankId === selectedTankId)) {
-      fTankId.value = ''
-    }
-  }
+  if (fTankId.value != null && !filteredVehicles.value.some(vehicle => vehicle.tankId === fTankId.value)) fTankId.value = null
   search()
 }
 
@@ -134,8 +149,8 @@ function search() {
   loadRecords()
 }
 
-async function onSizeChange(event: Event) {
-  emit('update:size', Number((event.target as HTMLSelectElement).value))
+async function onSizeChange(value: string) {
+  emit('update:size', Number(value))
   await nextTick()
   search()
 }
@@ -190,43 +205,49 @@ defineExpose({ reload: loadRecords })
 
 <template>
   <div>
-    <div class="hof-admin-filters">
-      <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
-      <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
-      <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
-      <select v-model="fNation" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
-        <option value="">{{ $t('hofAdmin.allNations') }}</option>
-        <option v-for="nation in vehicleNations" :key="nation" :value="nation">{{ replayValueLabel(t, te, nation) }}</option>
-      </select>
-      <select v-model="fTankType" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
-        <option value="">{{ $t('hofAdmin.allVehicleTypes') }}</option>
-        <option v-for="type in vehicleTypes" :key="type" :value="type">{{ replayValueLabel(t, te, type) }}</option>
-      </select>
-      <select v-model="fTankTier" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
-        <option value="">{{ $t('hofAdmin.allVehicleTiers') }}</option>
-        <option v-for="tier in vehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
-      </select>
-      <select v-model="fTankId" :disabled="vehicleOptionsLoading" @change="search">
-        <option value="">{{ $t('hofAdmin.allVehicles') }}</option>
-        <option v-for="vehicle in filteredVehicles" :key="vehicle.tankId" :value="String(vehicle.tankId)">{{ vehicleLabel(vehicle) }}</option>
-      </select>
-      <select v-model="fBattleType" @change="search">
-        <option value="">{{ $t('hofAdmin.battleTypeAll') }}</option>
-        <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
-        <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
-      </select>
-      <select v-model="fReplayAvailable" @change="search">
-        <option value="">{{ $t('hofAdmin.replayAll') }}</option>
-        <option value="true">{{ $t('hofAdmin.replayAvailable') }}</option>
-        <option value="false">{{ $t('hofAdmin.replayMissing') }}</option>
-      </select>
-      <select v-model="fSort" @change="search">
-        <option value="">{{ $t('hofAdmin.sortDamage') }}</option>
-        <option value="battle_time">{{ $t('hofAdmin.sortBattleTime') }}</option>
-        <option value="upload_time">{{ $t('hofAdmin.sortUploadTime') }}</option>
-      </select>
-      <button class="btn-sm" @click="search">{{ $t('hofAdmin.search') }}</button>
-    </div>
+    <AdminFilterBar :chips="filterChips" :remove-disabled="loading" @remove="removeChip">
+      <template #default="{ compact }">
+        <div class="hof-admin-filters">
+          <input v-model="fNickname" :aria-label="$t('hofAdmin.fNickname')" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
+          <input v-model="fAccountId" :aria-label="$t('hofAdmin.fAccountId')" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
+          <input v-model="fUploadedBy" :aria-label="$t('hofAdmin.fUploadedBy')" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
+          <select v-model="fNation" :aria-label="$t('hofAdmin.allNations')" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
+            <option value="">{{ $t('hofAdmin.allNations') }}</option>
+            <option v-for="nation in vehicleNations" :key="nation" :value="nation">{{ replayValueLabel(t, te, nation) }}</option>
+          </select>
+          <select v-model="fTankType" :aria-label="$t('hofAdmin.allVehicleTypes')" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
+            <option value="">{{ $t('hofAdmin.allVehicleTypes') }}</option>
+            <option v-for="type in vehicleTypes" :key="type" :value="type">{{ replayValueLabel(t, te, type) }}</option>
+          </select>
+          <select v-model="fTankTier" :aria-label="$t('hofAdmin.allVehicleTiers')" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
+            <option value="">{{ $t('hofAdmin.allVehicleTiers') }}</option>
+            <option v-for="tier in vehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
+          </select>
+          <VehiclePicker
+            :inline="compact"
+            :model-value="fTankId ?? undefined" :options="pickerOptions" :input-label="$t('hofAdmin.tank')"
+            :null-label="$t('hofAdmin.allVehicles')" :disabled="vehicleOptionsLoading"
+            @update:model-value="fTankId = $event" @change="search"
+          />
+          <select v-model="fBattleType" :aria-label="$t('hofAdmin.battleTypeAll')" @change="search">
+            <option value="">{{ $t('hofAdmin.battleTypeAll') }}</option>
+            <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
+            <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
+          </select>
+          <select v-model="fReplayAvailable" :aria-label="$t('hofAdmin.replayAll')" @change="search">
+            <option value="">{{ $t('hofAdmin.replayAll') }}</option>
+            <option value="true">{{ $t('hofAdmin.replayAvailable') }}</option>
+            <option value="false">{{ $t('hofAdmin.replayMissing') }}</option>
+          </select>
+          <select v-model="fSort" :aria-label="$t('hofAdmin.sortDamage')" @change="search">
+            <option value="">{{ $t('hofAdmin.sortDamage') }}</option>
+            <option value="battle_time">{{ $t('hofAdmin.sortBattleTime') }}</option>
+            <option value="upload_time">{{ $t('hofAdmin.sortUploadTime') }}</option>
+          </select>
+          <button class="btn-sm" @click="search">{{ $t('hofAdmin.search') }}</button>
+        </div>
+      </template>
+    </AdminFilterBar>
 
     <p v-if="error" class="error">{{ error }}</p>
     <div v-if="selection.count()" class="hof-bulk-bar">
@@ -309,13 +330,9 @@ defineExpose({ reload: loadRecords })
       <span>{{ $t('hofAdmin.pageInfo', { page, total: totalPages, items: totalItems }) }}</span>
       <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hofAdmin.next') }}</button>
     </div>
-    <label class="page-size">{{ $t('hofAdmin.size') }}
-      <select :value="size" @change="onSizeChange">
-        <option :value="20">20</option>
-        <option :value="50">50</option>
-        <option :value="100">100</option>
-      </select>
-    </label>
+    <div class="page-size"><span>{{ $t('hofAdmin.size') }}</span>
+      <SegmentedControl :model-value="String(size)" :ariaLabel="$t('hofAdmin.size')" :options="PAGE_SIZES" @update:model-value="onSizeChange" />
+    </div>
 
     <HoFAdminBulkDeleteDialog v-model:open="bulkOpen" domain="records" :ids="selection.selected.value" @settled="onBulkSettled" />
 

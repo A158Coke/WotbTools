@@ -11,6 +11,8 @@ import HoFAdminPage from './HoFAdminPage.vue'
 import HoFAdminBulkDeleteDialog from './HoFAdminBulkDeleteDialog.vue'
 import HoFAdminModeration from './HoFAdminModeration.vue'
 import HoFAdminRecords from './HoFAdminRecords.vue'
+import VehiclePicker from './VehiclePicker.vue'
+import { HOF_PENDING_COUNT_KEY } from '../shared/hofPendingCount.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 async function pressEscape() {
@@ -197,8 +199,15 @@ describe('HoFAdminPage', () => {
     hofAdminApi.hofAdminMark3Replays.mockResolvedValue([])
   })
 
-  function mountPage() {
-    const wrapper = mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages }, provide: { [DIALOG_INLINE_KEY]: true } } })
+  function countContext() {
+    const settled = vi.fn()
+    return { status: ref('hidden'), snapshot: ref(null), reason: ref(null), retry: vi.fn(), captureInvalidation: vi.fn(() => settled), settled }
+  }
+  function mountPage(pendingCount) {
+    const wrapper = mount(HoFAdminPage, { global: {
+      mocks: { $t: translate, $tm: optionMessages },
+      provide: { [DIALOG_INLINE_KEY]: true, [HOF_PENDING_COUNT_KEY]: pendingCount ?? null },
+    } })
     wrappers.push(wrapper)
     return wrapper
   }
@@ -251,12 +260,13 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    const textInputs = wrapper.findAll('.hof-admin-filters input')
+    const textInputs = wrapper.findAll('.hof-admin-filters > input')
     expect(textInputs.map(input => input.attributes('placeholder')))
       .toEqual(['hofAdmin.fNickname', 'hofAdmin.fAccountId', 'hofAdmin.fUploadedBy'])
 
     let selects = wrapper.find('.hof-admin-filters').findAll('select')
-    expect(selects[3].findAll('option')).toHaveLength(5)
+    const picker = wrapper.getComponent(VehiclePicker)
+    expect(picker.findAll('[role=option]')).toHaveLength(5)
 
     await selects[2].setValue('10')
     await selects[0].setValue('EUROPE')
@@ -268,14 +278,19 @@ describe('HoFAdminPage', () => {
     expect(selects[2].element.value).toBe('10')
     expect(selects[1].findAll('option').map(option => option.attributes('value')))
       .toEqual(['', 'HEAVY_TANK', 'MEDIUM_TANK', 'TANK_DESTROYER'])
-    expect(selects[3].findAll('option').map(option => option.text()))
+    expect(picker.findAll('[role=option]').map(option => option.text()))
       .toEqual(['hofAdmin.allVehicles', 'Progetto 65 · T10'])
     expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(expect.objectContaining({
       nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10'
     }))
     expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0].tankId).toBe('')
 
-    await selects[3].setValue('385')
+    const callsBefore = hofAdminApi.hofAdminList.mock.calls.length
+    const input = picker.get('[role=combobox]')
+    await input.setValue('prog')
+    expect(hofAdminApi.hofAdminList).toHaveBeenCalledTimes(callsBefore)
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(hofAdminApi.hofAdminList).toHaveBeenCalledTimes(callsBefore + 1)
     await flushPromises()
     expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -289,6 +304,27 @@ describe('HoFAdminPage', () => {
     expect(selects[0].element.value).toBe('EUROPE')
     expect(selects[1].element.value).toBe('MEDIUM_TANK')
     expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0].tankId).toBe('')
+  })
+
+  it('removes only the applied filter and preserves typed drafts and the last success on failure', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const bar = wrapper.getComponent({ name: 'AdminFilterBar' })
+    const fields = wrapper.findAll('.hof-admin-filters > input')
+    await fields[0].setValue('First')
+    await fields[0].trigger('keyup.enter')
+    await flushPromises()
+    expect(bar.props('chips')).toEqual([{ key: 'nickname', label: 'First' }])
+    await fields[1].setValue('draft-account')
+    hofAdminApi.hofAdminList.mockRejectedValueOnce(new Error('offline'))
+    bar.vm.$emit('remove', 'nickname')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(expect.objectContaining({ nickname: '', accountId: '' }))
+    expect(bar.props('chips')).toEqual([{ key: 'nickname', label: 'First' }])
+    bar.vm.$emit('remove', 'nickname')
+    await flushPromises()
+    expect(bar.props('chips')).toEqual([])
+    expect(fields[1].element.value).toBe('draft-account')
   })
 
   it('wotbtools-admin sees admin content', async () => {
@@ -361,15 +397,19 @@ describe('HoFAdminPage', () => {
     expect(wrapper.find('.hof-hundred .hof-queue .danger').exists()).toBe(false)
     expect(wrapper.find('.hof-hundred .hof-review-pane').exists()).toBe(false)
     const filters = wrapper.findAll('.hof-hundred .hof-admin-filters select')
-    expect(filters).toHaveLength(4)
+    expect(filters).toHaveLength(3)
     await filters[0].setValue('EUROPE')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, status: '', nation: 'EUROPE', vehicleType: '', vehicleId: null
     })
     await filters[1].setValue('MEDIUM_TANK')
-    await filters[2].setValue('385')
-    await filters[3].setValue('CURRENT')
+    const input = wrapper.get('.hof-hundred [role=combobox]')
+    const callsBefore = hofAdminApi.hofAdminHundredList.mock.calls.length
+    await input.setValue('prog')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(callsBefore + 1)
+    await filters[2].setValue('CURRENT')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, status: 'CURRENT', nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', vehicleId: 385
@@ -422,6 +462,64 @@ describe('HoFAdminPage', () => {
     expect(items[2].classes()).toContain('val-ok')
     expect(items[3].classes()).toContain('val-ok')
     expect(modal.findAll('.hundred-inputs input')).toHaveLength(0)
+  })
+
+  it('shows only valid counts, reports loading and failure, and refreshes without changing tabs or list filters', async () => {
+    const pending = countContext()
+    const wrapper = mountPage(pending)
+    await flushPromises()
+    const summary = () => wrapper.find('[data-testid=hof-pending-summary]')
+    const refresh = () => wrapper.get('[data-testid=hof-pending-refresh]')
+    expect(summary().exists()).toBe(false)
+    pending.status.value = 'loading'
+    await flushPromises()
+    expect(summary().text()).toContain('pendingCount.loading')
+    expect(refresh().element.disabled).toBe(true)
+    pending.snapshot.value = { hundred: 7, mark3: 5, total: 12, sampledAt: Date.UTC(2026, 0, 1) }
+    pending.status.value = 'ready'
+    await flushPromises()
+    expect(summary().text()).toContain('pendingCount.totals(hundred=7,mark3=5,total=12')
+    const reloads = hofAdminApi.hofAdminList.mock.calls.length
+    await refresh().trigger('click')
+    expect(pending.retry).toHaveBeenCalledOnce()
+    expect(hofAdminApi.hofAdminList).toHaveBeenCalledTimes(reloads)
+    expect(wrapper.get('[role=tab][aria-selected=true]').text()).toBe('hofAdmin.recordsTab')
+    pending.status.value = 'loading'
+    await flushPromises()
+    expect(summary().text()).toContain('pendingCount.updating')
+    pending.status.value = 'unknown'
+    pending.reason.value = 'forbidden'
+    await flushPromises()
+    expect(summary().text()).toContain('pendingCount.forbidden')
+    expect(summary().text()).not.toContain('total=12')
+    pending.snapshot.value = { hundred: 0, mark3: 0, total: 0, sampledAt: Date.UTC(2026, 0, 1) }
+    pending.status.value = 'ready'
+    await flushPromises()
+    expect(summary().text()).toContain('pendingCount.empty(hundred=0,mark3=0,total=0')
+    pending.status.value = 'hidden'
+    await flushPromises()
+    expect(summary().exists()).toBe(false)
+  })
+
+  it.each(['success', 'conflict'])('invalidates the captured count scope after a departed review settles with %s', async result => {
+    const pending = countContext()
+    const write = Promise.withResolvers()
+    hofAdminApi.hofAdminHundredApprove.mockReturnValueOnce(write.promise)
+    const wrapper = mountPage(pending)
+    await openReviewWithEvidence(wrapper, replayEvidence)
+    await approveBtn(wrapper).trigger('click')
+    expect(pending.captureInvalidation).not.toHaveBeenCalled()
+    await approveBtn(wrapper).trigger('click')
+    expect(pending.captureInvalidation).toHaveBeenCalledOnce()
+    expect(pending.settled).not.toHaveBeenCalled()
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
+    wrapper.unmount()
+    if (result === 'success') write.resolve({})
+    else write.reject(new Error('409'))
+    await flushPromises()
+    expect(pending.settled).toHaveBeenCalledOnce()
+    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledOnce()
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(1)
   })
 
   it('approve flow confirms then calls approve API and refreshes list', async () => {
@@ -503,7 +601,8 @@ describe('HoFAdminPage', () => {
       items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
-    const wrapper = mountPage()
+    const pending = countContext()
+    const wrapper = mountPage(pending)
     await flushPromises()
     await switchToHundred(wrapper)
     await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
@@ -515,10 +614,12 @@ describe('HoFAdminPage', () => {
     await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredReject).not.toHaveBeenCalled()
+    expect(pending.captureInvalidation).not.toHaveBeenCalled()
 
     await wrapper.find('.hof-review-pane textarea').setValue('手工复核发现异常')
     await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
+    expect(pending.settled).toHaveBeenCalledOnce()
     expect(hofAdminApi.hofAdminHundredReject).toHaveBeenCalledWith(11, {
       rejectReason: 'OTHER',
       rejectReasonText: '手工复核发现异常'
@@ -530,7 +631,8 @@ describe('HoFAdminPage', () => {
       items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(currentDetail)
-    const wrapper = mountPage()
+    const pending = countContext()
+    const wrapper = mountPage(pending)
     await flushPromises()
     await switchToHundred(wrapper)
 
@@ -548,6 +650,7 @@ describe('HoFAdminPage', () => {
     await select.setValue('DATA_ERROR')
     await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
     await flushPromises()
+    expect(pending.captureInvalidation).not.toHaveBeenCalled()
     expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'DATA_ERROR' })
   })
 
@@ -775,7 +878,7 @@ describe('HoFAdminPage', () => {
       page: 1, size: 50, status: '', nation: '', vehicleType: '', vehicleId: null,
     })
     const selects = wrapper.findAll('.hof-mark3 select')
-    const statusValues = selects[3].findAll('option').map(option => option.element.value)
+    const statusValues = selects[2].findAll('option').map(option => option.element.value)
     expect(statusValues).toEqual(['', 'PENDING', 'CURRENT', 'REJECTED', 'CANCELLED', 'DELETED'])
 
     await selects[0].setValue('EUROPE')
@@ -1117,7 +1220,7 @@ describe('HoFAdminPage', () => {
     expect(wrapper.find('th.actions').exists()).toBe(true)
   })
 
-  it('applies the shared control styles to section-owned filters, page-size and bulk confirm controls', async () => {
+  it('applies the shared control styles to section-owned filters and bulk confirm controls', async () => {
     const sheets = []
     const inject = (component, file) => {
       expect(component.__scopeId).toMatch(/^data-v-/)
@@ -1133,6 +1236,7 @@ describe('HoFAdminPage', () => {
         sheets.push(sheet)
       }
     }
+    inject(VehiclePicker, './VehiclePicker.vue')
     inject(HoFAdminRecords, './HoFAdminRecords.vue')
     inject(HoFAdminModeration, './HoFAdminModeration.vue')
     inject(HoFAdminBulkDeleteDialog, './HoFAdminBulkDeleteDialog.vue')
@@ -1152,16 +1256,21 @@ describe('HoFAdminPage', () => {
       const sectionControls = () => [
         ...wrapper.findAll('.hof-admin-filters input'),
         ...wrapper.findAll('.hof-admin-filters select'),
-        wrapper.find('.page-size select'),
       ]
 
+      const sizes = wrapper.find('.page-size [role=radiogroup]')
+      expect(sizes.findAll('[role=radio]').map(button => button.text())).toEqual(['20', '50', '100'])
+      await sizes.get('[data-value="20"]').trigger('click')
+      await flushPromises()
+      expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(expect.objectContaining({ size: 20, page: 1 }))
+
       const records = sectionControls()
-      expect(records.length).toBeGreaterThan(10)
+      expect(records).toHaveLength(10)
       for (const element of records) expect(styled(element)).toEqual(control)
 
       await switchToHundred(wrapper)
       const hundred = sectionControls()
-      expect(hundred).toHaveLength(5)
+      expect(hundred).toHaveLength(4)
       for (const element of hundred) expect(styled(element)).toEqual(control)
       await wrapper.find('.hof-hundred .hof-queue-all input').setValue(true)
       await wrapper.findAll('.hof-hundred .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
@@ -1172,7 +1281,7 @@ describe('HoFAdminPage', () => {
 
       await switchToMark3(wrapper)
       const mark3 = sectionControls()
-      expect(mark3).toHaveLength(5)
+      expect(mark3).toHaveLength(4)
       for (const element of mark3) expect(styled(element)).toEqual(control)
     } finally {
       for (const sheet of sheets) sheet.remove()

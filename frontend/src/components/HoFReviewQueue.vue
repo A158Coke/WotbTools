@@ -10,7 +10,7 @@ const emit = defineEmits<{ open: [id: number]; toggle: [id: number, checked: boo
     <ul class="hof-queue-list">
       <li v-for="item in items" :key="item.id" class="hof-queue-item" :class="{ 'is-current': item.id === currentId }">
         <input type="checkbox" :checked="item.checked" :aria-label="$t('hofAdmin.selectRow', { id: item.id })" @change="emit('toggle', item.id, ($event.target as HTMLInputElement).checked)" />
-        <button type="button" class="hof-queue-main" :aria-current="item.id === currentId ? 'true' : undefined" data-testid="hof-queue-open" :disabled="busy && item.id !== currentId" @click="emit('open', item.id)">
+        <button type="button" class="hof-queue-main" :aria-current="item.id === currentId ? 'true' : undefined" data-testid="hof-queue-open" :data-record-id="item.id" :disabled="busy && item.id !== currentId" @click="emit('open', item.id)">
           <strong class="hof-queue-title">{{ item.title }}</strong>
           <span class="hundred-status" :class="'hundred-status-' + item.status.toLowerCase()">{{ item.statusLabel }}</span>
           <span class="hof-queue-sub">{{ item.sub }}</span>

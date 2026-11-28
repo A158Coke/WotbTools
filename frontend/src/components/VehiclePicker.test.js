@@ -50,6 +50,8 @@ describe('VehiclePicker', () => {
     box.element.value = 'obj'
     await box.trigger('input')
     expect(optionLabels(wrapper)).toEqual(['Object 261'])
+    await box.trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(wrapper.emitted('change')).toBeUndefined()
     await box.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('update:modelValue')).toEqual([[999]])
     expect(wrapper.emitted('change')).toEqual([[999]])
