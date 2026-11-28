@@ -459,5 +459,8 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 .filters-advanced-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--form-field-min), 1fr)); gap: var(--space-3); margin-block-start: var(--space-2); }
 .battle-vehicles { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 
+@media (width < 768px) {
+  .admin-list-table tbody td.spawn-cell { flex-direction: column; gap: var(--space-1); }
+}
 @media (width >= 1200px) { .insights { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 </style>

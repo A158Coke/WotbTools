@@ -315,6 +315,14 @@ async function layout(size, page, rows) {
       if (state.profile !== size.profile) problems.add('expected profile ' + size.profile + ', got ' + state.profile)
       if (Boolean(size.insets) !== state.drawer) problems.add('unexpected shell navigation topology')
       if (state.width > size.width + 1) problems.add('document overflow ' + state.width + ' > ' + size.width)
+      if (view === 'admin-battle-data' && size.width < 768) {
+        await waitElement(page, '.spawn-cell .spawn-bar')
+        const barsFit = await page.probe(() => [...document.querySelectorAll('.spawn-cell .spawn-bar')].every(bar => {
+          const cell = bar.closest('td').getBoundingClientRect(), rect = bar.getBoundingClientRect()
+          return rect.width > 0 && rect.left >= cell.left - 1 && rect.right <= cell.right + 1
+        }))
+        if (!barsFit) problems.add('spawn bar extends beyond its mobile card cell')
+      }
       for (let done = false; !done && steps < 120; steps++) {
         await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
         await page.animationsSettled()
