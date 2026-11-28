@@ -578,6 +578,7 @@ describe('HoFAdminPage', () => {
 
   it('hundred single-record delete flow opens and submits for every status', async () => {
     for (const status of ['PENDING', 'CURRENT', 'SUPERSEDED', 'REJECTED', 'CANCELLED', 'DELETED']) {
+      hofAdminApi.hofAdminHundredDelete.mockClear()
       hofAdminApi.hofAdminHundredList.mockResolvedValue({
         items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
       })

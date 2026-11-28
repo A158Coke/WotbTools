@@ -4,6 +4,7 @@ import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.user.api.UserProfiles;
 import com.wotb.web.user.api.WotbAccountIdentity;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -383,6 +384,13 @@ class HundredSubmissionLifecycleTest extends HundredSubmissionTestSupport {
             final HundredBattleSubmission s = currentSubmission(4120);
             s.setStatus(status);
             s.setProofScreenshot("data:image/png;base64,AAAA");
+            if ("DELETED".equals(status)) {
+                // 完整的 V50 之前软删除墓碑：旧软删事件必须随审计快照独立留存
+                s.setDeletedAt(OffsetDateTime.parse("2026-10-01T00:00:00Z"));
+                s.setDeletedBy("old-admin");
+                s.setDeleteReason("WRONG_REVIEW");
+                s.setDeleteReasonText("legacy tombstone");
+            }
             when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
             final HundredSubmissionSummaryDto result =
@@ -409,6 +417,17 @@ class HundredSubmissionLifecycleTest extends HundredSubmissionTestSupport {
             assertThat(log.getAdminUsername()).isEqualTo("admin-user");
             assertThat(log.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
             assertThat(log.getDeleteReasonText()).isEqualTo("spam");
+            if ("DELETED".equals(status)) {
+                assertThat(log.getPreviousDeletedAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T00:00:00Z"));
+                assertThat(log.getPreviousDeletedBy()).isEqualTo("old-admin");
+                assertThat(log.getPreviousDeleteReason()).isEqualTo("WRONG_REVIEW");
+                assertThat(log.getPreviousDeleteReasonText()).isEqualTo("legacy tombstone");
+            } else {
+                assertThat(log.getPreviousDeletedAt()).isNull();
+                assertThat(log.getPreviousDeletedBy()).isNull();
+                assertThat(log.getPreviousDeleteReason()).isNull();
+                assertThat(log.getPreviousDeleteReasonText()).isNull();
+            }
             // 回放证据清理与物理删除（FK RESTRICT：先删证据行）
             verify(evidenceService).discardForSubmission(10L);
             verify(repository).delete(s);

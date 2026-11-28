@@ -199,7 +199,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 域 | 语义 | 结果 | 请求体 | 证据 / 物理文件处理 |
 |---|---|---|---|---|
 | 单场 `hall_of_fame_record` | **hard delete**（真删行，无 tombstone / blocklist） | 行消失，同一回放日后可重新上传 | 无 reason | 单事务 audit snapshot(`DELETE_ENTRY`) + 删行；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
-| 百场 `hundred_battle_submission` | **hard delete**（V50 起，状态无关；无 tombstone） | 行消失，连同回放证据元数据；独立审计快照 `hundred_admin_log` 存活 | `reason` 强制，`OTHER` 必填 `reasonText`（trim 后 ≤500） | 同一事务：审计快照（删除前原始状态）+ 删 replay evidence 行（FK RESTRICT，先删证据）+ 删 submission 行（截图随行消失）；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
+| 百场 `hundred_battle_submission` | **hard delete**（V50 起，状态无关；无 tombstone） | 行消失，连同回放证据元数据；独立审计快照 `hundred_admin_log` 存活 | `reason` 强制，`OTHER` 必填 `reasonText`（trim 后 ≤500） | 同一事务：审计快照（删除前原始状态；V50 之前的 DELETED 墓碑另存 `previous_deleted_*` / `previous_delete_reason*` 四列，原软删事件操作者/时间/原因独立留存可追溯，与本次物理删除事件字段分开）+ 删 replay evidence 行（FK RESTRICT，先删证据）+ 删 submission 行（截图随行消失）；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
 | 三环 `mark3_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | 同上 | 同上（三环 evidence 在独立命名空间，不与单场/百场共用引用计数） |
 
 **bulk delete == 逐条重复权威单条删除语义**，没有第二套删除规则、状态机或 tombstone：

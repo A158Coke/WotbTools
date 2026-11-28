@@ -75,6 +75,19 @@ public class HundredAdminLog {
     @Column(name = "delete_reason_text", length = 500)
     private String deleteReasonText;
 
+    /** V50 之前的软删除墓碑历史（仅原 status='DELETED' 的行有值），随物理删除独立留存。 */
+    @Column(name = "previous_deleted_at")
+    private OffsetDateTime previousDeletedAt;
+
+    @Column(name = "previous_deleted_by", length = 64)
+    private String previousDeletedBy;
+
+    @Column(name = "previous_delete_reason", length = 64)
+    private String previousDeleteReason;
+
+    @Column(name = "previous_delete_reason_text", length = 500)
+    private String previousDeleteReasonText;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -107,6 +120,11 @@ public class HundredAdminLog {
         log.adminUsername = adminUsername;
         log.deleteReason = deleteReason;
         log.deleteReasonText = deleteReasonText;
+        // V50 之前的软删除墓碑：原软删事件的操作者/时间/原因必须随快照独立留存，不能只留本次物理删除事件
+        log.previousDeletedAt = s.getDeletedAt();
+        log.previousDeletedBy = s.getDeletedBy();
+        log.previousDeleteReason = s.getDeleteReason();
+        log.previousDeleteReasonText = s.getDeleteReasonText();
         return log;
     }
 
@@ -145,6 +163,14 @@ public class HundredAdminLog {
     public String getDeleteReason() { return deleteReason; }
 
     public String getDeleteReasonText() { return deleteReasonText; }
+
+    public OffsetDateTime getPreviousDeletedAt() { return previousDeletedAt; }
+
+    public String getPreviousDeletedBy() { return previousDeletedBy; }
+
+    public String getPreviousDeleteReason() { return previousDeleteReason; }
+
+    public String getPreviousDeleteReasonText() { return previousDeleteReasonText; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

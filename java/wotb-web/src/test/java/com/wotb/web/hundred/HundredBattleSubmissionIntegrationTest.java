@@ -302,6 +302,13 @@ class HundredBattleSubmissionIntegrationTest {
         for (final String status : List.of("SUPERSEDED", "DELETED")) {
             final HundredBattleSubmission s = insertRow(status, 4200, 150);
             s.setProofScreenshot("data:image/png;base64,AAAA");
+            if ("DELETED".equals(status)) {
+                // 完整的 V50 之前软删除墓碑夹具
+                s.setDeletedAt(OffsetDateTime.now());
+                s.setDeletedBy("legacy-admin");
+                s.setDeleteReason("DATA_ERROR");
+                s.setDeleteReasonText("legacy tombstone");
+            }
             repository.saveAndFlush(s);
             attachCompleteEvidence(s.getId());
             assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
@@ -334,7 +341,48 @@ class HundredBattleSubmissionIntegrationTest {
             assertEquals("cleanup", log.getDeleteReasonText());
             assertEquals("admin-sub", log.getAdminKeycloakUserId());
             assertEquals("admin-user", log.getAdminUsername());
+            if ("DELETED".equals(status)) {
+                assertEquals("legacy-admin", log.getPreviousDeletedBy());
+                assertEquals("DATA_ERROR", log.getPreviousDeleteReason());
+                assertEquals("legacy tombstone", log.getPreviousDeleteReasonText());
+                assertTrue(log.getPreviousDeletedAt() != null, "旧软删事件时间必须独立留存");
+            } else {
+                assertNull(log.getPreviousDeletedAt());
+                assertNull(log.getPreviousDeletedBy());
+                assertNull(log.getPreviousDeleteReason());
+                assertNull(log.getPreviousDeleteReasonText());
+            }
         }
+    }
+
+    @Test
+    void hardDeleteOfLegacyTombstonePreservesOriginalSoftDeleteEvent() {
+        // V50 之前的 DELETED 墓碑：原软删事件（操作者/时间/原因）随行删除，但必须在新审计中独立可查，
+        // 且与本次物理删除事件的 admin/reason 字段分开保存
+        final HundredBattleSubmission tombstone = insertRow("DELETED", 4200, 150);
+        tombstone.setDeletedAt(OffsetDateTime.parse("2026-09-15T12:00:00Z"));
+        tombstone.setDeletedBy("legacy-admin");
+        tombstone.setDeleteReason("PLAYER_IDENTITY_ISSUE");
+        tombstone.setDeleteReasonText("original soft delete");
+        repository.saveAndFlush(tombstone);
+
+        moderationService.deleteSubmission("admin-sub", "admin-user", tombstone.getId(), "CHEATING_FORGERY", "physical cleanup");
+
+        assertTrue(repository.findById(tombstone.getId()).isEmpty(), "墓碑行必须物理删除");
+        final List<HundredAdminLog> logs = auditRepository.findBySubmissionIdOrderByIdAsc(tombstone.getId());
+        assertEquals(1, logs.size());
+        final HundredAdminLog log = logs.get(0);
+        // 本次物理删除事件
+        assertEquals("DELETED", log.getOriginalStatus());
+        assertEquals("admin-sub", log.getAdminKeycloakUserId());
+        assertEquals("admin-user", log.getAdminUsername());
+        assertEquals("CHEATING_FORGERY", log.getDeleteReason());
+        assertEquals("physical cleanup", log.getDeleteReasonText());
+        // 旧软删事件独立留存，不与本次事件混用
+        assertEquals(OffsetDateTime.parse("2026-09-15T12:00:00Z"), log.getPreviousDeletedAt());
+        assertEquals("legacy-admin", log.getPreviousDeletedBy());
+        assertEquals("PLAYER_IDENTITY_ISSUE", log.getPreviousDeleteReason());
+        assertEquals("original soft delete", log.getPreviousDeleteReasonText());
     }
 
     @Test

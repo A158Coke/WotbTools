@@ -32,6 +32,14 @@ create table hundred_admin_log (
     delete_reason varchar(64) not null,
     delete_reason_text varchar(500),
 
+    -- V50 之前的软删除墓碑历史（仅 status='DELETED' 的行有值）：原软删事件的
+    -- 操作者/时间/原因随 submission 行物理删除而消失，必须独立留存可追溯；
+    -- 与本次物理删除事件的 admin_* / delete_reason 字段分开保存
+    previous_deleted_at timestamp with time zone,
+    previous_deleted_by varchar(64),
+    previous_delete_reason varchar(64),
+    previous_delete_reason_text varchar(500),
+
     created_at timestamp with time zone not null default now()
 );
 
