@@ -345,7 +345,10 @@ Caddy process remains in memory. The Caddy admin API stays disabled.
 
 当前文件名未内容寻址，Caddy 因此用短复验 TTL 而非 `immutable`。版本化 dataset
 （`/v/<id>/...`）按 release 不可变，但文件名仍未内容寻址，故保持同一 300s TTL；
-`versions.json` 用 60s，让发布/回滚尽快可见。浏览器 CORS 只反映
+`versions.json` 和 `/diffs/index.json` 用 60s，让发布和回滚尽快可见。
+`/diffs/` 由主机的 `/srv/wotb-assets/diffs/` 提供，版本对目录独立于默认数据集，
+沿用 300s 的重新验证策略。发布时先写入带两端 release ID 的版本对目录，校验后再原子更新索引。
+浏览器 CORS 只反映
 `https://wotbtools.com` 与 `https://www.wotbtools.com`。可缓存响应无条件带
 `Vary: Origin`，防止共享缓存把无 Origin 的表示复用给允许的浏览器请求。Range 与
 条件请求由 Caddy 静态文件服务器处理；CI 以请求级真实 Caddy 镜像演练，
