@@ -163,6 +163,23 @@ export async function runShellOverlayScenario(env, scenario) {
       // 桌面侧栏伸缩动画：真实点击 + 运行时中间宽度采样，独立于源码判断（DC-MOT-01/02）。
       // 折叠开关只在 >=1200px 的 expanded 档渲染；平板/抽屉外壳没有此控件。
       if (scenario.width >= 1200 && !scenario.touch) {
+        // 跨断点进出抽屉外壳：外壳换档必须直接跳到 0 / 240，不保留过渡中的侧栏占位。
+        await page.emulate({ width: 390, height: 844, touch: true })
+        await page.waitForValue('window.innerWidth', value => value === 390, { label: 'drawer viewport applied' })
+        const drawerFrame = await page.evaluate(`(() => {
+          const style = getComputedStyle(document.documentElement)
+          const app = document.getElementById('app')
+          return {
+            token: parseFloat(style.getPropertyValue('--sidebar-w')) || 0,
+            padding: parseFloat(getComputedStyle(app).paddingInlineStart) || 0,
+          }
+        })()`)
+        check(drawerFrame.token === 0 && drawerFrame.padding === 0, `抽屉首帧不应保留侧栏占位：${JSON.stringify(drawerFrame)}`)
+        await page.emulate({ width: 1440, height: 900, touch: false })
+        await page.waitForValue('window.innerWidth', value => value === 1440, { label: 'desktop viewport restored' })
+        const desktopFrame = await page.evaluate(`parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'))`)
+        check(Math.abs(desktopFrame - SIDEBAR_FULL_W) <= 1, `回到桌面首帧应直接是 ${SIDEBAR_FULL_W}：${desktopFrame}`)
+
         await page.waitForValue('!!document.querySelector("[data-testid=sidebar-collapse]")', Boolean, { label: 'sidebar collapse control' })
         const initialToken = await page.evaluate(`parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'))`)
         check(Math.abs(initialToken - SIDEBAR_FULL_W) <= 1, `桌面侧栏初始宽度应为 ${SIDEBAR_FULL_W}，实际 ${initialToken}`)
