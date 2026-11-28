@@ -416,7 +416,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-layer { position: fixed; inset: 0; z-index: var(--z-dialog); pointer-events: none; }
 .onboarding-mask { position: fixed; background: var(--color-onboarding-scrim); pointer-events: none; }
 .onboarding-cutout { position: fixed; border: var(--onboarding-outline); border-radius: var(--radius-md); box-shadow: var(--elevation-3); pointer-events: none; }
-.onboarding-card { position: fixed; display: flex; flex-direction: column; gap: var(--space-2); max-height: calc(100dvh - var(--space-6)); overflow-y: auto; padding: var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); box-shadow: var(--elevation-3); pointer-events: auto; outline: 0; }
+.onboarding-card { position: fixed; display: flex; flex-direction: column; gap: var(--space-2); max-height: calc(100dvh - var(--space-6)); overflow-y: auto; padding: var(--space-4); border: 1px solid var(--color-card-border); border-radius: var(--radius-lg); background: var(--color-card); box-shadow: var(--elevation-3); pointer-events: auto; outline: 0; }
 .onboarding-card > * { flex-shrink: 0; }
 .onboarding-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .onboarding-progress { color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }

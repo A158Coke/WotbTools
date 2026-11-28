@@ -430,7 +430,7 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 .kpi > strong { font: var(--type-h2); font-variant-numeric: tabular-nums; }
 .insights { display: grid; gap: var(--space-4); margin-block-start: var(--space-4); }
 .insights > * { min-inline-size: 0; }
-.battle-card { padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.battle-card { padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--color-card-border); border-radius: var(--radius-lg); background: var(--color-card); }
 .battle-card .battle-h2 { margin-block-start: 0; }
 
 .trend { display: flex; align-items: stretch; gap: var(--space-1); margin: 0; padding: 0; overflow-x: auto; list-style: none; }

@@ -87,9 +87,9 @@ function hideBrokenImage(event: Event) {
   overflow: hidden;
   block-size: calc(var(--space-12) * 5.5);
   padding: var(--space-5);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
 }
 .hof-podium-card.is-first { block-size: calc(var(--space-12) * 6.25); border-color: var(--color-accent); }
 .is-compact .hof-podium-card.is-first { block-size: calc(var(--space-12) * 4.5); padding: var(--space-4); }

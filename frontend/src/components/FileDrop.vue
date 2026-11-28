@@ -207,7 +207,7 @@ defineExpose({
     <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
     <input v-if="showFolderPicker && !isAndroidApp()" ref="folderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
 
-    <div v-if="!files.length" class="dropzone surface-glass-1" data-testid="file-uploader-empty">
+    <div v-if="!files.length" class="dropzone ui-card" data-testid="file-uploader-empty">
       <CloudUpload class="dropzone-icon" :size="40" aria-hidden="true" />
       <p class="dropzone-title">{{ $t('upload.drop_hint') }}</p>
       <p class="dropzone-hint">{{ $t(showFolderPicker ? 'upload.sub_hint' : 'upload.files_only_hint') }}</p>

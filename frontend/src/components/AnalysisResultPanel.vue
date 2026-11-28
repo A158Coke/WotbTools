@@ -196,9 +196,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   max-width: none;
   margin-left: 0;
   margin-right: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-card-border);
   border-radius: 9px;
-  background: var(--bg-card2);
+  background: var(--color-card);
   box-shadow: var(--surface-shadow);
   overflow: hidden;
   color: var(--text);
@@ -278,7 +278,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .team-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .team-section:last-child { border-bottom: 0; }
 .team-review-content h3 { margin: 0 0 8px; color: var(--text-heading); }
-.team-card { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
+.team-card { margin-top: 10px; padding: 10px; border: 1px solid var(--color-card-border); border-radius: 6px; background: var(--color-card); }
 .team-card h4 { display: inline; margin: 0; color: var(--text-heading); }
 .team-card .analysis-text, .team-verdict .analysis-text, .team-timeline .analysis-text { padding: 0; }
 

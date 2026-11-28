@@ -51,9 +51,9 @@ const failureKey = computed(() => {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   color: var(--color-text-primary);
   font: var(--type-body);
 }

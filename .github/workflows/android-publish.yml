@@ -87,6 +87,7 @@ jobs:
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-08-api-readiness.sh"
       env:
         STEP_STAGED_ASSETORIGIN: ${{ steps.staged.outputs.assetOrigin }}
+        STEP_STAGED_VERSIONNAME: ${{ steps.staged.outputs.versionName }}
     - name: Verify both distribution replicas before writing the production manifest
       if: steps.pubpreflight.outputs.publishAction == 'publish'
       shell: bash

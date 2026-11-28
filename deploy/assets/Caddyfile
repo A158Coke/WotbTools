@@ -66,6 +66,18 @@ assets.wotbtools.com {
 		file_server
 	}
 
+	# Diff pairs are independent of the default dataset and retain their release paths.
+	handle /diffs/index.json {
+		root * /srv/wotb-assets
+		header Cache-Control "public, max-age=60, must-revalidate"
+		file_server
+	}
+
+	handle_path /diffs/* {
+		root * /srv/wotb-assets/diffs
+		file_server
+	}
+
 	# Host-level version catalog (frontend selector source). Short TTL so a dataset
 	# publish/rollback is visible without waiting for the content TTL.
 	handle /versions.json {

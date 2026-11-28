@@ -125,9 +125,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
   align-items: center;
   gap: var(--space-2) var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   color: var(--color-text-primary);
 }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-card-main { display: grid; gap: var(--space-0); min-width: 0; }
@@ -285,8 +285,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-pending-card {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin: 12px 0; padding: 12px 14px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--bg-card); box-shadow: var(--surface-shadow);
+  border: 1px solid var(--color-card-border); border-radius: 8px;
+  background: var(--color-card); box-shadow: var(--surface-shadow);
 }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-pending-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-pending-title { font-size: 13px; font-weight: 700; color: var(--accent-dark); }

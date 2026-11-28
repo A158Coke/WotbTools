@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, type CSSProperties } from 'vue'
+import { computed, ref, type CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { formatXpCompact } from '../utils/xpFormat.js'
@@ -104,6 +104,78 @@ function edgePath(edge: TechEdge) {
   return `M ${xOut} ${yFrom} L ${xBoundary} ${yFrom} L ${xBoundary} ${yTo} L ${xIn} ${yTo}`
 }
 
+const panning = ref(false)
+let pan: {
+  id: number
+  viewport: HTMLElement
+  row: HTMLElement
+  x: number
+  y: number
+  left: number
+  top: number
+} | null = null
+let suppressClick = false
+
+function startPan(event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary) return
+  suppressClick = false
+  pan = null
+  panning.value = false
+  // Touch uses the native scroller, including momentum and the nested tier rows.
+  if (event.pointerType !== 'mouse') return
+  const viewport = event.currentTarget as HTMLElement
+  const row = (event.target as Element).closest<HTMLElement>('.tt-tier-cards') || viewport
+  if (row.scrollWidth <= row.clientWidth && viewport.scrollHeight <= viewport.clientHeight) return
+  pan = {
+    id: event.pointerId, viewport, row,
+    x: event.clientX, y: event.clientY, left: row.scrollLeft, top: viewport.scrollTop,
+  }
+}
+
+function movePan(event: PointerEvent) {
+  if (!pan || event.pointerId !== pan.id) return
+  if (!(event.buttons & 1)) {
+    endPan(event)
+    return
+  }
+  const dx = event.clientX - pan.x
+  const dy = event.clientY - pan.y
+  if (!panning.value) {
+    if (Math.hypot(dx, dy) < 5) return
+    panning.value = true
+    suppressClick = true
+    pan.viewport.setPointerCapture(event.pointerId)
+  }
+  pan.row.scrollLeft = pan.left - dx
+  pan.viewport.scrollTop = pan.top - dy
+}
+
+function endPan(event: PointerEvent) {
+  if (event.pointerId !== pan?.id) return
+  pan = null
+  panning.value = false
+}
+
+function leavePan(event: PointerEvent) {
+  if (!panning.value) endPan(event)
+}
+
+function interceptPanClick(event: MouseEvent) {
+  if (!suppressClick || event.detail === 0) return
+  suppressClick = false
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+const panEvents = {
+  pointerdown: startPan,
+  pointermove: movePan,
+  pointerup: endPan,
+  pointercancel: endPan,
+  pointerleave: leavePan,
+  lostpointercapture: endPan,
+}
+
 function hideBrokenImage(event: Event) {
   if (event.currentTarget instanceof HTMLImageElement) event.currentTarget.hidden = true
 }
@@ -125,7 +197,15 @@ function hideBrokenImage(event: Event) {
     </AppButton>
   </EmptyState>
 
-  <div v-else-if="tierRows" class="tt-tiers" data-testid="techtree-tiers">
+  <div
+    v-else-if="tierRows"
+    class="tt-tiers ui-section"
+    :class="{ 'is-panning': panning }"
+    data-testid="techtree-tiers"
+    v-on="panEvents"
+    @click.capture="interceptPanClick"
+    @dragstart.prevent
+  >
     <p v-if="!tierRows.length" class="tt-status" role="status">{{ t('research.no_type_match') }}</p>
     <section v-for="row in tierRows" :key="row.tier" class="tt-tier-row" :aria-label="t('agentTanks.tier_n', { tier: row.tier })" :data-testid="`techtree-tier-${row.tier}`">
       <span class="tt-tier-label" aria-hidden="true">{{ romanLevel(row.tier) }}</span>
@@ -157,7 +237,15 @@ function hideBrokenImage(event: Event) {
     </section>
   </div>
 
-  <div v-else-if="grid" class="tt-scroll" data-testid="techtree-grid">
+  <div
+    v-else-if="grid"
+    class="tt-scroll ui-section"
+    :class="{ 'is-panning': panning }"
+    data-testid="techtree-grid"
+    v-on="panEvents"
+    @click.capture="interceptPanClick"
+    @dragstart.prevent
+  >
     <div class="tt-canvas" :style="{ minWidth: `${grid.columns.length * CELL_W}px` }">
       <div class="tt-body" :style="gridStyle">
         <svg class="tt-edges" :width="svgSize.width" :height="svgSize.height" aria-hidden="true">
@@ -217,7 +305,7 @@ function hideBrokenImage(event: Event) {
           </span>
         </span>
       </div>
-      <div class="tt-ruler" :style="rulerStyle" data-testid="techtree-levels">
+      <div class="tt-ruler surface-glass-1" :style="rulerStyle" data-testid="techtree-levels">
         <span v-for="(x, i) in grid.columns" :key="`ruler-${x}`" class="tt-ruler-cell">
           {{ grid.minTier != null && grid.minTier + i <= grid.maxTier! ? romanLevel(grid.minTier + i) : '' }}
         </span>
@@ -228,23 +316,35 @@ function hideBrokenImage(event: Event) {
 
 <style scoped>
 .tt-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
-.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-2); }
-.tt-tier-row { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
+.tt-tiers { display: flex; flex-direction: column; justify-content: safe center; gap: var(--space-2); overflow-y: auto; padding: var(--space-2); }
+.tt-tier-row { flex: none; display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
 .tt-tier-label { color: var(--color-accent-text); font: var(--type-h3); font-weight: 700; text-align: center; }
-.tt-tier-cards { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
+.tt-tier-cards { display: flex; justify-content: safe center; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
 .tt-tier-cell { flex: none; }
-.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
-.tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
-.tt-body { position: relative; display: grid; }
+.tt-scroll { overflow: auto; }
+.tt-scroll, .tt-tiers {
+  flex: none;
+  block-size: clamp(320px, 80dvh, 780px);
+  cursor: grab;
+  user-select: none;
+}
+.is-panning, .is-panning .tt-cell { cursor: grabbing; }
+
+.tt-scroll, .tt-tiers, .tt-tier-cards {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-tree-connector) 55%, transparent) transparent;
+}
+.tt-canvas { display: flex; flex-direction: column; min-block-size: 100%; }
+.tt-body { position: relative; display: grid; flex: none; align-self: center; margin-block: auto; }
 .tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.tt-edge { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; }
-.tt-arrow-head { fill: var(--color-border-strong); }
-.tt-ruler { position: sticky; inset-block-end: 0; display: grid; background: var(--color-surface-2); }
+.tt-edge { fill: none; stroke: var(--color-tree-connector); stroke-width: 1.5; }
+.tt-arrow-head { fill: var(--color-tree-connector); }
+.tt-ruler { position: sticky; inset-block-end: 0; display: grid; flex: none; justify-content: center; border-block-start: var(--border-width) solid var(--color-card-border); }
 .tt-ruler-cell { display: grid; place-items: center; block-size: 24px; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
 .tt-cell { display: grid; place-items: center; padding: 0; border: 0; background: transparent; min-inline-size: 0; cursor: pointer; }
 .tt-cell:focus-visible { outline: none; }
 .tt-cell:focus-visible .tt-card { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tt-card { position: relative; display: block; inline-size: 176px; block-size: 64px; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.tt-card { position: relative; display: block; inline-size: 176px; block-size: 64px; overflow: hidden; border: 1px solid var(--color-card-border); border-radius: var(--radius-md); background: var(--color-card); }
 .tt-cell:hover .tt-card { border-color: var(--color-border-strong); }
 .tt-cell.is-premium .tt-card { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
 .tt-cell.is-collector .tt-card { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
@@ -259,6 +359,14 @@ function hideBrokenImage(event: Event) {
 .tt-card-cost { position: absolute; inset-block-start: 2px; inset-inline-end: 4px; color: var(--color-warning); font: var(--type-caption); font-variant-numeric: tabular-nums; font-weight: 600; }
 .tt-pill { padding: 0 var(--space-1); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
 .tt-pill.is-preview { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
+
+@media (orientation: landscape) and (height <= 520px) {
+  .tt-scroll { block-size: max(240px, 78dvh); }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .tt-scroll, .tt-tiers, .tt-tier-cards { scrollbar-color: auto; }
+}
 
 @media (width < 768px) {
   .tt-tier-cell .tt-card { inline-size: 92px; block-size: 48px; display: grid; place-items: center; }
